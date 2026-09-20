@@ -2,11 +2,15 @@ import type { Point } from "./classification";
 
 /**
  * The shapes that travel between the camera, the classifier and the panels.
- *
- * These existed only as `any` before, in eight different signatures, which is
- * why a landmark array and a detection array could be passed to each other
- * without complaint. Naming them once is what makes the wiring checkable.
  */
+
+export interface FingerStatus {
+  label: string;
+  isCorrect: boolean;
+  state: 'straight' | 'bent' | 'curved' | 'touching' | 'folded' | 'spread';
+  targetState: string;
+  score: number;
+}
 
 /** One hand's reading: what it was judged to be, and how firmly. */
 export interface MudraReading {
@@ -14,6 +18,10 @@ export interface MudraReading {
   /** 0–1. The panels render this as a percentage; the classifier emits the ratio. */
   confidence: number;
   feedback: string;
+  fingerStatus?: Record<'thumb' | 'index' | 'middle' | 'ring' | 'pinky', FingerStatus>;
+  corrections?: string[];
+  detectedMudraName?: string;
+  detectedConfidence?: number;
 }
 
 /** A reading with the hand it came from, once handedness is known. */

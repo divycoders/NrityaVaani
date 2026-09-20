@@ -3,7 +3,14 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 import { Camera } from 'lucide-react';
-import { classifyMudra, classifySamyuktaMudra, getSpecificMudraScore, type Point } from '@/lib/mediapipe/classification';
+import { 
+  classifyMudra, 
+  classifySamyuktaMudra, 
+  getSpecificMudraScore, 
+  getSpecificSamyuktaScore, 
+  isSamyuktaMudra, 
+  type Point 
+} from '@/lib/mediapipe/classification';
 import type { FrameHandler, HandReading } from '@/lib/mediapipe/types';
 
 interface CameraFeedProps {
@@ -159,39 +166,64 @@ const CameraFeed = ({
     
     const detectedMudras: HandReading[] = [];
     if (results.landmarks && results.landmarks.length > 0) {
-      results.landmarks.forEach((hand: Point[], index: number) => {
-        const handedness = results.handednesses?.[index]?.[0]?.categoryName || 'Unknown';
-        
-        if (targetMudra) {
-          // Specific evaluation for target mudra in practice mode
-          const specificMudra = getSpecificMudraScore(hand, targetMudra, handedness);
-          detectedMudras.push({ handedness, ...specificMudra, isTarget: true });
-          
-          // Also get the best current match for context
-          const bestMudra = classifyMudra(hand, handedness);
-          if (bestMudra && bestMudra.name !== specificMudra.name) {
-             detectedMudras.push({ handedness, ...bestMudra, isTarget: false });
+      const isSamyuktaTarget = targetMudra ? isSamyuktaMudra(targetMudra) : false;
+
+      if (isSamyuktaTarget) {
+        if (results.landmarks.length >= 2) {
+          const samyuktaScore = getSpecificSamyuktaScore(results.landmarks[0], results.landmarks[1], targetMudra!);
+          detectedMudras.push({
+            handedness: 'Both Hands',
+            ...samyuktaScore,
+            isTarget: true,
+          });
+
+          const bestSamyukta = classifySamyuktaMudra(results.landmarks[0], results.landmarks[1]);
+          if (bestSamyukta && bestSamyukta.name.toLowerCase() !== targetMudra!.toLowerCase()) {
+            detectedMudras.push({ handedness: 'Both Hands', ...bestSamyukta, isTarget: false });
           }
         } else {
-          const mudra = classifyMudra(hand, handedness);
-          if (mudra) {
-            detectedMudras.push({ handedness, ...mudra });
-          }
-        }
-      });
-
-      // Double-hand (Samyukta) mudra evaluation
-      if (results.landmarks.length >= 2) {
-        const samyukta = classifySamyuktaMudra(results.landmarks[0], results.landmarks[1]);
-        if (samyukta) {
-          const isTargetMatch = targetMudra ? samyukta.name.toLowerCase() === targetMudra.toLowerCase() : false;
-          detectedMudras.unshift({
+          detectedMudras.push({
             handedness: 'Both Hands',
-            name: samyukta.name,
-            confidence: samyukta.confidence,
-            feedback: samyukta.feedback,
-            isTarget: isTargetMatch || undefined,
+            name: targetMudra!,
+            confidence: 0.15,
+            feedback: `Show both hands to practice ${targetMudra}.`,
+            isTarget: true,
+            corrections: ['Position both hands clearly in front of the camera.'],
           });
+        }
+      } else {
+        results.landmarks.forEach((hand: Point[], index: number) => {
+          const handedness = results.handednesses?.[index]?.[0]?.categoryName || 'Unknown';
+          
+          if (targetMudra) {
+            // Specific evaluation for target mudra in practice mode
+            const specificMudra = getSpecificMudraScore(hand, targetMudra, handedness);
+            detectedMudras.push({ handedness, ...specificMudra, isTarget: true });
+            
+            // Also get the best current match for context
+            const bestMudra = classifyMudra(hand, handedness);
+            if (bestMudra && bestMudra.name !== specificMudra.name) {
+               detectedMudras.push({ handedness, ...bestMudra, isTarget: false });
+            }
+          } else {
+            const mudra = classifyMudra(hand, handedness);
+            if (mudra) {
+              detectedMudras.push({ handedness, ...mudra });
+            }
+          }
+        });
+
+        // Double-hand (Samyukta) mudra evaluation for free mode
+        if (results.landmarks.length >= 2) {
+          const samyukta = classifySamyuktaMudra(results.landmarks[0], results.landmarks[1]);
+          if (samyukta) {
+            detectedMudras.unshift({
+              handedness: 'Both Hands',
+              name: samyukta.name,
+              confidence: samyukta.confidence,
+              feedback: samyukta.feedback,
+            });
+          }
         }
       }
     }

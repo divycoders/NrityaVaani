@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeft, 
@@ -12,18 +12,19 @@ import {
   RotateCcw, 
   Volume2, 
   VolumeX, 
-  Award, 
   CheckCircle2, 
-  Sparkles, 
+  AlertCircle,
   Box, 
-  Image as ImageIcon 
+  Image as ImageIcon,
+  ShieldCheck
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import dynamic from 'next/dynamic';
 import { MUDRAS } from '@/lib/constants/mudras';
-import type { Point } from '@/lib/mediapipe/classification';
 import CameraFeed from '@/components/live/CameraFeed';
+import { isSamyuktaMudra } from '@/lib/mediapipe/classification';
+import type { FrameLandmarks, HandReading, FingerStatus } from '@/lib/mediapipe/types';
 import { cn } from '@/lib/utils';
 import { Eyebrow, Rule } from '@/components/ui/editorial';
 import { translateFeedback } from '@/lib/utils/translations';
@@ -40,9 +41,6 @@ const MudraHand3D = dynamic(() => import('@/components/three/MudraHand3D'), {
   ),
 });
 
-/** What CameraFeed hands back for each hand it reads. */
-type DetectedMudra = { name: string; confidence: number; feedback: string; handedness?: string; isTarget?: boolean };
-
 const THREE_D_MUDRA_INDEX: Record<string, number> = {
   pataka: 0,
   tripataka: 1,
@@ -56,9 +54,16 @@ const THREE_D_MUDRA_INDEX: Record<string, number> = {
 
 const REQUIRED_HOLD_MS = 3000;
 
+const FINGER_KEYS: Array<{ key: 'thumb' | 'index' | 'middle' | 'ring' | 'pinky'; label: string }> = [
+  { key: 'thumb', label: 'Thumb' },
+  { key: 'index', label: 'Index' },
+  { key: 'middle', label: 'Middle' },
+  { key: 'ring', label: 'Ring' },
+  { key: 'pinky', label: 'Pinky' },
+];
+
 export default function PracticeModePage() {
   const params = useParams();
-  const router = useRouter();
   const mudraSlug = params.slug as string;
   const mudra = MUDRAS.find(m => m.slug === mudraSlug);
 
@@ -69,12 +74,19 @@ export default function PracticeModePage() {
   const prevMudra = currentIndex > 0 ? MUDRAS[currentIndex - 1] : null;
   const nextMudra = currentIndex >= 0 && currentIndex < MUDRAS.length - 1 ? MUDRAS[currentIndex + 1] : null;
   const has3DPose = mudra ? mudra.slug in THREE_D_MUDRA_INDEX : false;
+  const isSamyukta = useMemo(() => {
+    return mudra ? isSamyuktaMudra(mudra.slug) || mudra.category === 'Samyukta Hasta' : false;
+  }, [mudra]);
 
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
   const [language, setLanguage] = useState<'en' | 'hi'>('en');
   const [confidence, setConfidence] = useState(0);
   const [bestDetection, setBestDetection] = useState<string | null>(null);
+  const [fingerStatus, setFingerStatus] = useState<Record<'thumb' | 'index' | 'middle' | 'ring' | 'pinky', FingerStatus> | null>(null);
+  const [corrections, setCorrections] = useState<string[]>([]);
+  const [detectedMudraName, setDetectedMudraName] = useState<string | null>(null);
+  const [detectedConfidence, setDetectedConfidence] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<string>("Show your hand to the camera to begin.");
   const [overlayMode, setOverlayMode] = useState<'photo' | '3d'>('photo');
 
@@ -95,6 +107,31 @@ export default function PracticeModePage() {
   const hasGreetedRef = useRef(false);
   const lastHandSeenRef = useRef<number | null>(null);
   const nudgeIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Pedagogical data breakdowns
+  const steps = useMemo(() => {
+    if (!mudra?.instructions) return [];
+    return mudra.instructions
+      .split(". ")
+      .map((s) => s.trim().replace(/\.$/, ""))
+      .filter(Boolean);
+  }, [mudra]);
+
+  const usages = useMemo(() => {
+    if (!mudra?.significance) return [];
+    return mudra.significance
+      .split(/,\s*/)
+      .map((s) => s.trim().replace(/\.$/, ""))
+      .filter(Boolean);
+  }, [mudra]);
+
+  const commonMistakesList = useMemo(() => {
+    if (!mudra?.commonMistakes) return [];
+    return mudra.commonMistakes
+      .split(". ")
+      .map((s) => s.trim().replace(/\.$/, ""))
+      .filter(Boolean);
+  }, [mudra]);
 
   // Initialize voices
   useEffect(() => {
@@ -219,7 +256,7 @@ export default function PracticeModePage() {
   }, [isCameraActive, confidence, mudra, language, speak]);
 
   // Handle detection updates
-  const handleUpdate = useCallback((landmarkData: { landmarks?: Point[][] } | null, mudraData: DetectedMudra[]) => {
+  const handleUpdate = useCallback((landmarkData: FrameLandmarks | null, mudraData: HandReading[]) => {
     if (!landmarkData || !landmarkData.landmarks || landmarkData.landmarks.length === 0) {
       return;
     }
@@ -243,6 +280,10 @@ export default function PracticeModePage() {
     if (targetDetection) {
       setConfidence(targetDetection.confidence);
       setBestDetection(targetDetection.name);
+      setFingerStatus(targetDetection.fingerStatus || null);
+      setCorrections(targetDetection.corrections || []);
+      setDetectedMudraName(targetDetection.detectedMudraName || null);
+      setDetectedConfidence(targetDetection.detectedConfidence ?? null);
       
       // Collect accuracy sample
       accuracySamplesRef.current.push(Math.round(targetDetection.confidence * 100));
@@ -256,11 +297,20 @@ export default function PracticeModePage() {
           : `Perfect ${mudra.name} form. Hold steady!`;
         speak(perfectMsg);
       } else if (targetDetection.confidence > 0.4 && !isMastered) {
-        speak(translatedMsg);
+        if (targetDetection.corrections && targetDetection.corrections.length > 0) {
+          const spokenTip = translateFeedback(targetDetection.corrections[0], language);
+          speak(spokenTip);
+        } else {
+          speak(translatedMsg);
+        }
       }
     } else if (primaryDetection && primaryDetection.name !== "No Mudra Detected") {
-      setConfidence(0.1); 
+      setConfidence(0.15); 
       setBestDetection(primaryDetection.name);
+      setFingerStatus(primaryDetection.fingerStatus || null);
+      setCorrections(primaryDetection.corrections || [`Form the classical ${mudra.name} gesture.`]);
+      setDetectedMudraName(primaryDetection.name);
+      setDetectedConfidence(primaryDetection.confidence);
       const wrongMsg = translateFeedback(`Detected ${primaryDetection.name} instead. Try to form ${mudra.name}.`, language);
       setFeedback(wrongMsg);
       speak(wrongMsg);
@@ -415,6 +465,10 @@ export default function PracticeModePage() {
               onClick={() => {
                 setConfidence(0);
                 setBestDetection(null);
+                setFingerStatus(null);
+                setCorrections([]);
+                setDetectedMudraName(null);
+                setDetectedConfidence(null);
                 setFeedback("Show your hand to the camera to begin.");
                 setHoldProgress(0);
                 setIsMastered(false);
@@ -505,20 +559,67 @@ export default function PracticeModePage() {
               )}
             </div>
 
-            {/* Instruction Sections */}
-            <div className="grid md:grid-cols-2 gap-8">
-              <section>
-                <Eyebrow tone="primary">how it is held</Eyebrow>
-                <p className="serif text-[1rem] leading-[1.6] text-foreground/70 mt-3">
-                  {mudra.instructions}
+            {/* Pedagogical Guidance & Natyashastra Checkpoints */}
+            <div className="space-y-6">
+              {/* Anatomical Checkpoints & Common Pitfalls */}
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="border border-foreground/12 rounded-sm p-6 bg-background/40">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Eyebrow tone="primary">anatomical checkpoints</Eyebrow>
+                  </div>
+                  <ol className="space-y-3">
+                    {steps.map((step, idx) => (
+                      <li key={idx} className="flex items-start gap-3">
+                        <span className="mono text-[10px] text-foreground/40 tabular-nums pt-1 shrink-0 font-medium">
+                          {String(idx + 1).padStart(2, "0")}
+                        </span>
+                        <p className="serif text-[0.98rem] leading-[1.55] text-foreground/75">
+                          {step}.
+                        </p>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+
+                <div className="border border-rose-400/25 rounded-sm p-6 bg-rose-950/10">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Eyebrow className="text-rose-400/90">where it goes wrong</Eyebrow>
+                  </div>
+                  <ul className="space-y-2.5">
+                    {commonMistakesList.map((mistake, idx) => (
+                      <li key={idx} className="flex items-start gap-2.5">
+                        <span className="text-rose-400/80 text-[10px] pt-1">✕</span>
+                        <p className="serif text-[0.98rem] leading-[1.55] text-foreground/75">
+                          {mistake}.
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Viniyoga & Canonical Significance */}
+              <div className="border border-foreground/12 rounded-sm p-6 bg-background/40">
+                <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 mb-4">
+                  <Eyebrow tone="primary">viniyoga & classical depictions</Eyebrow>
+                  <span className="mono text-[9px] uppercase tracking-[0.14em] text-foreground/40">
+                    Abhinaya Darpana Canon
+                  </span>
+                </div>
+                <p className="serif text-[0.96rem] leading-[1.6] text-foreground/70 mb-4">
+                  {mudra.meaningLong}
                 </p>
-              </section>
-              <section className="border-l-2 border-rose-400/40 pl-5">
-                <Eyebrow className="text-rose-400/80">where it goes wrong</Eyebrow>
-                <p className="serif text-[1rem] leading-[1.6] text-foreground/70 mt-3">
-                  {mudra.commonMistakes}
-                </p>
-              </section>
+                <div className="flex flex-wrap gap-2">
+                  {usages.map((usage, idx) => (
+                    <span
+                      key={idx}
+                      className="mono text-[10px] uppercase tracking-[0.12em] px-3 py-1 rounded-full border border-foreground/15 bg-foreground/[0.03] text-foreground/80"
+                    >
+                      {usage}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -548,7 +649,7 @@ export default function PracticeModePage() {
             </div>
 
             {/* Live Scorecard Card */}
-            <div className="border border-foreground/12 rounded-sm p-8 sm:p-10 bg-background/50 backdrop-blur-sm">
+            <div className="border border-foreground/12 rounded-sm p-6 sm:p-8 bg-background/50 backdrop-blur-sm space-y-6">
               <div className="flex items-baseline justify-between">
                 <div className="flex items-baseline gap-3">
                   <span className="mono text-[3.4rem] leading-none tabular-nums tracking-tight text-primary">
@@ -590,16 +691,136 @@ export default function PracticeModePage() {
               </div>
 
               {/* Progress bar */}
-              <div className="mt-5 h-px w-full bg-foreground/15">
+              <div className="h-1.5 w-full bg-foreground/10 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-primary transition-[width] duration-200"
+                  className={cn(
+                    "h-full transition-[width] duration-200 rounded-full",
+                    confidence >= 0.8 ? "bg-emerald-400" : confidence >= 0.5 ? "bg-primary" : "bg-amber-500/80"
+                  )}
                   style={{ width: `${Math.round(confidence * 100)}%` }}
                 />
               </div>
 
+              {/* Diagnostic Comparison Pill: Target vs Detected */}
+              {isCameraActive && detectedMudraName && (
+                <div className="p-3 rounded-sm border border-foreground/15 bg-foreground/[0.02] flex items-center justify-between text-[11px] mono">
+                  <div className="flex items-center gap-2">
+                    <span className="text-foreground/45 uppercase tracking-[0.14em]">Target:</span>
+                    <span className="text-primary font-medium">{mudra.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-foreground/45 uppercase tracking-[0.14em]">Detected:</span>
+                    <span className={cn(
+                      "font-medium",
+                      detectedMudraName.toLowerCase() === mudra.name.toLowerCase()
+                        ? "text-emerald-400"
+                        : "text-amber-400"
+                    )}>
+                      {detectedMudraName} {detectedConfidence ? `(${Math.round(detectedConfidence * 100)}%)` : ''}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* 5-Finger Kinematic Alignment HUD */}
+              {!isSamyukta ? (
+                <div>
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className="mono text-[10px] uppercase tracking-[0.18em] text-foreground/50">
+                      5-Finger Kinematic Alignment
+                    </span>
+                    <span className="mono text-[9px] uppercase tracking-[0.14em] text-foreground/40">
+                      {fingerStatus ? 'Active Tracking' : 'Awaiting Hand'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-5 gap-2">
+                    {FINGER_KEYS.map(({ key, label }) => {
+                      const st = fingerStatus ? fingerStatus[key] : null;
+                      const isOk = st?.isCorrect ?? false;
+                      return (
+                        <div
+                          key={key}
+                          className={cn(
+                            "rounded-sm p-2 border text-center transition-colors flex flex-col justify-between",
+                            !st 
+                              ? "border-foreground/10 bg-foreground/[0.02] text-foreground/40"
+                              : isOk
+                                ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-400"
+                                : "border-amber-500/30 bg-amber-500/5 text-amber-400"
+                          )}
+                        >
+                          <div className="flex items-center justify-center mb-1">
+                            {isOk ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <AlertCircle className={cn("w-3.5 h-3.5", st ? "text-amber-400" : "text-foreground/25")} />
+                            )}
+                          </div>
+                          <span className="mono text-[10px] font-semibold uppercase tracking-wider block">
+                            {label}
+                          </span>
+                          <span className="mono text-[8px] uppercase tracking-tight text-foreground/55 truncate mt-1">
+                            {st ? `${st.targetState}` : '---'}
+                          </span>
+                          {st && (
+                            <span className="mono text-[8px] tabular-nums text-foreground/40 mt-0.5">
+                              {Math.round(st.score * 100)}%
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                /* Dual-hand (Samyukta) Status HUD */
+                <div className="p-3.5 rounded-sm border border-primary/25 bg-primary/[0.03]">
+                  <div className="flex items-center justify-between">
+                    <span className="mono text-[10px] uppercase tracking-[0.18em] text-primary">
+                      Samyukta Dual-Hand Tracking
+                    </span>
+                    <span className="mono text-[9px] uppercase tracking-[0.14em] text-foreground/50">
+                      Both Hands Active
+                    </span>
+                  </div>
+                  <p className="serif text-[0.95rem] text-foreground/75 mt-2 leading-relaxed">
+                    Keep both hands within camera view. Align wrist proximity, finger positioning, and relative palm orientation.
+                  </p>
+                </div>
+              )}
+
+              {/* Actionable Kinematic Corrections List */}
+              {corrections.length > 0 && confidence < 0.85 && (
+                <div className="p-4 rounded-sm border border-amber-500/30 bg-amber-500/5 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-400">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span className="mono text-[10px] uppercase tracking-[0.16em] font-semibold">
+                      Kinematic Corrections
+                    </span>
+                  </div>
+                  <ul className="space-y-1.5 pl-6 list-disc">
+                    {corrections.map((tip, idx) => (
+                      <li key={idx} className="serif text-[0.95rem] text-foreground/85 leading-snug">
+                        {translateFeedback(tip, language)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* High Accuracy Verified Badge */}
+              {confidence >= 0.85 && !isMastered && (
+                <div className="p-3 rounded-sm border border-emerald-500/30 bg-emerald-500/5 flex items-center gap-2.5 text-emerald-400">
+                  <ShieldCheck className="w-4 h-4 shrink-0" />
+                  <span className="serif text-[0.95rem] text-emerald-300">
+                    All finger angles verified against Natyashastra proportions. Hold steady!
+                  </span>
+                </div>
+              )}
+
               {/* Mastery Celebration Banner */}
               {isMastered && (
-                <div className="mt-6 p-4 rounded-sm border border-emerald-500/40 bg-emerald-950/30 backdrop-blur-md">
+                <div className="p-4 rounded-sm border border-emerald-500/40 bg-emerald-950/30 backdrop-blur-md">
                   <div className="flex items-center gap-3">
                     <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                     <div>
@@ -632,14 +853,14 @@ export default function PracticeModePage() {
               {/* Spoken Feedback */}
               <p
                 aria-live="polite"
-                className="serif text-[1.08rem] leading-[1.55] text-foreground/80 mt-7"
+                className="serif text-[1.05rem] leading-[1.55] text-foreground/80"
               >
                 {feedback}
               </p>
 
-              <Rule className="my-7" />
+              <Rule className="my-5" />
 
-              <dl className="space-y-3.5">
+              <dl className="space-y-3">
                 <div className="flex items-baseline justify-between gap-4">
                   <dt className="mono text-[10px] uppercase tracking-[0.18em] text-foreground/45">
                     reading

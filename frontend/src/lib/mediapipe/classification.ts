@@ -1,9 +1,15 @@
+import type { FingerStatus } from './types';
+
 /** What a classifier call returns: the name it settled on, how firmly, and why. */
 export interface MudraScore {
   name: string;
   /** 0-1. */
   confidence: number;
   feedback: string;
+  fingerStatus?: Record<'thumb' | 'index' | 'middle' | 'ring' | 'pinky', FingerStatus>;
+  corrections?: string[];
+  detectedMudraName?: string;
+  detectedConfidence?: number;
 }
 
 export interface Point {
@@ -31,19 +37,34 @@ export function getFingerExtensionScore(landmarks: Point[], fingerIndices: numbe
   const dip = landmarks[dipIdx];
   const tip = landmarks[tipIdx];
 
+  if (!mcp || !pip || !dip || !tip) return 0;
+
   const distMcpTip = calculateDistance(mcp, tip);
   const distSegments = 
     calculateDistance(mcp, pip) + 
     calculateDistance(pip, dip) + 
     calculateDistance(dip, tip);
 
-  return Math.min(1.0, distMcpTip / distSegments);
+  return distSegments > 0 ? Math.min(1.0, distMcpTip / distSegments) : 0;
 }
 
-// `handedness` is accepted so both call sites can pass what MediaPipe gave
-// them, but the rules are all relative to the hand's own geometry and so
-// read the same on either hand.
-export function classifyMudra(landmarks: Point[], handedness?: string) {
+const SAMYUKTA_MUDRA_SET = new Set([
+  'anjali', 'kapota', 'karkata', 'swastika', 'swastika-double',
+  'shivalinga', 'pushpaputa', 'shankha', 'chakra', 'chakra-double',
+  'matsya', 'garuda', 'samputa', 'pasha', 'kilaka', 'bherunda', 'kurma', 'varaha'
+]);
+
+export function isSamyuktaMudra(nameOrSlug: string): boolean {
+  if (!nameOrSlug) return false;
+  const cleaned = nameOrSlug.toLowerCase().trim().replace(/\s+/g, '-');
+  const simple = cleaned.replace(/[^a-z]/g, '');
+  return SAMYUKTA_MUDRA_SET.has(cleaned) || SAMYUKTA_MUDRA_SET.has(simple);
+}
+
+// -----------------------------------------------------------------------------
+// Free Classifier (identifies best matching mudra without target)
+// -----------------------------------------------------------------------------
+export function classifyMudra(landmarks: Point[], _handedness?: string): MudraScore {
   const thumbIdx = [1, 2, 3, 4];
   const indexIdx = [5, 6, 7, 8];
   const middleIdx = [9, 10, 11, 12];
@@ -57,9 +78,9 @@ export function classifyMudra(landmarks: Point[], handedness?: string) {
   const sPky = getFingerExtensionScore(landmarks, pinkyIdx);
 
   const thumbTip = landmarks[4];
-  const ringTip = landmarks[16];
   const indexTip = landmarks[8];
   const middleTip = landmarks[12];
+  const ringTip = landmarks[16];
   const pinkyTip = landmarks[20];
 
   const distThumbRing = calculateDistance(thumbTip, ringTip);
@@ -70,219 +91,163 @@ export function classifyMudra(landmarks: Point[], handedness?: string) {
   const distRngThumb = calculateDistance(ringTip, thumbTip);
   const distPkyThumb = calculateDistance(pinkyTip, thumbTip);
 
-  const isExt = (s: number) => s > 0.85;
-  const isCurved = (s: number) => s > 0.4 && s < 0.85;
-  const isBent = (s: number) => s < 0.65;
+  const isExt = (s: number) => s > 0.82;
+  const isCurved = (s: number) => s > 0.45 && s <= 0.82;
+  const isBent = (s: number) => s <= 0.60;
 
-  let bestMudra = null;
+  let bestMudra: MudraScore | null = null;
   let maxConfidence = 0;
 
-  // 1. Pataka: All 4 straight & together, thumb close to palm
+  const consider = (name: string, confidence: number, feedback: string) => {
+    const roundedConf = Math.min(1.0, Math.round(confidence * 100) / 100);
+    if (roundedConf > maxConfidence) {
+      maxConfidence = roundedConf;
+      bestMudra = { name, confidence: roundedConf, feedback };
+    }
+  };
+
+  // 1. Pataka: All 4 straight & together, thumb tucked
   if (isExt(sIdx) && isExt(sMid) && isExt(sRng) && isExt(sPky)) {
-    if (distThumbIndex < 0.12) { // Prevents classifying as Ardhachandra
-      const togetherness = 1 - (distIdxMid + distMidRng) * 2;
-      const confidence = (sIdx + sMid + sRng + sPky) / 4 * Math.max(0, togetherness);
-      if (confidence > maxConfidence) {
-        maxConfidence = confidence;
-        bestMudra = { name: "Pataka", confidence, feedback: "Excellent. Keep the fingers strictly together." };
-      }
+    if (distThumbIndex < 0.13) {
+      const togetherness = 1 - (distIdxMid + distMidRng) * 1.8;
+      const conf = ((sIdx + sMid + sRng + sPky) / 4) * Math.max(0.1, togetherness);
+      consider("Pataka", conf, "Excellent. Keep the fingers strictly together.");
     }
   }
 
   // 2. Tripataka: Pataka + Ring bent
   if (isExt(sIdx) && isExt(sMid) && isBent(sRng) && isExt(sPky)) {
-    const confidence = (sIdx + sMid + (1 - sRng) + sPky) / 4;
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Tripataka", confidence, feedback: "Good. Ring finger must be distinctly bent." };
-    }
+    const conf = (sIdx + sMid + (1 - sRng) + sPky) / 4;
+    consider("Tripataka", conf, "Good. Ring finger must be distinctly bent.");
   }
 
-  // 3. Ardhapataka: Index, Middle straight, others bent
-  if (isExt(sIdx) && isExt(sMid) && isBent(sRng) && isBent(sPky)) {
-    const confidence = (sIdx + sMid + (1 - sRng) + (1 - sPky)) / 4;
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Ardhapataka", confidence, feedback: "Keep index and middle fingers vertical." };
-    }
+  // 3. Ardhapataka: Index, Middle straight; Ring, Pinky bent
+  if (isExt(sIdx) && isExt(sMid) && isBent(sRng) && isBent(sPky) && distIdxMid < 0.06) {
+    const conf = (sIdx + sMid + (1 - sRng) + (1 - sPky)) / 4;
+    consider("Ardhapataka", conf, "Nice. Keep index and middle fingers straight.");
   }
 
-  // 4. Kartarimukha: Index, Middle spread V
-  if (isExt(sIdx) && isExt(sMid) && isBent(sRng) && isBent(sPky) && distIdxMid > 0.08) {
-    const confidence = (sIdx + sMid + (1 - sRng) + (1 - sPky)) / 4;
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Kartarimukha", confidence, feedback: "Great V-shape. Keep fingers fully extended." };
-    }
+  // 4. Kartarimukha: Index, Middle spread in V; Ring, Pinky bent
+  if (isExt(sIdx) && isExt(sMid) && isBent(sRng) && isBent(sPky) && distIdxMid >= 0.06) {
+    const conf = ((sIdx + sMid + (1 - sRng) + (1 - sPky)) / 4) * Math.min(1.2, distIdxMid * 10);
+    consider("Kartarimukha", conf, "Great scissors V-shape. Keep index and middle wide.");
   }
 
-  // 5. Mayura: Ring touching Thumb
-  if (distThumbRing < 0.05 && isExt(sIdx) && isExt(sMid) && isExt(sPky)) {
-    const confidence = (1 - distThumbRing * 10) * ((sIdx + sMid + sPky) / 3);
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Mayura", confidence, feedback: "Peacock pose. Spread other fingers slightly." };
-    }
+  // 5. Mayura: Ring tip touches thumb tip; Index, Middle, Pinky straight
+  if (distThumbRing < 0.065 && isExt(sIdx) && isExt(sMid) && isExt(sPky)) {
+    const conf = (1 - distThumbRing * 12) * ((sIdx + sMid + sPky) / 3);
+    consider("Mayura", conf, "Graceful peacock gesture. Thumb and ring tips touch.");
   }
 
-  // 6. Arala: Index bent
+  // 6. Arala: Index bent hook; Middle, Ring, Pinky straight
   if (isBent(sIdx) && isExt(sMid) && isExt(sRng) && isExt(sPky)) {
-    const confidence = ((1 - sIdx) + sMid + sRng + sPky) / 4;
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Arala", confidence, feedback: "Ensure the other three fingers are straight." };
-    }
+    const conf = ((1 - sIdx) + sMid + sRng + sPky) / 4;
+    consider("Arala", conf, "Bent index with other fingers upright.");
   }
 
-  // 7. Shukatunda: Index/Ring bent
+  // 7. Shukatunda: Index and Ring bent; Middle and Pinky straight
   if (isBent(sIdx) && isExt(sMid) && isBent(sRng) && isExt(sPky)) {
-    const confidence = ((1 - sIdx) + sMid + (1 - sRng) + sPky) / 4;
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Shukatunda", confidence, feedback: "Hook the index finger clearly." };
-    }
+    const conf = ((1 - sIdx) + sMid + (1 - sRng) + sPky) / 4;
+    consider("Shukatunda", conf, "Parrot beak form detected.");
   }
 
-  // 9. Mushti: Closed fist
-  if (isBent(sIdx) && isBent(sMid) && isBent(sRng) && isBent(sPky) && !isExt(sThumb)) {
-    // Make sure fingers are curled tightly (score very low)
-    if (sIdx < 0.5 && sMid < 0.5) {
-      const confidence = ((1 - sIdx) + (1 - sMid) + (1 - sRng) + (1 - sPky) + (1 - sThumb)) / 5;
-      if (confidence > maxConfidence) {
-        maxConfidence = confidence;
-        bestMudra = { name: "Mushti", confidence, feedback: "Keep the fist tight." };
-      }
-    }
+  // 8. Mushti: Closed fist, thumb wrapped
+  if (isBent(sIdx) && isBent(sMid) && isBent(sRng) && isBent(sPky) && sThumb <= 0.75) {
+    const conf = ((1 - sIdx) + (1 - sMid) + (1 - sRng) + (1 - sPky) + (1 - sThumb)) / 5;
+    consider("Mushti", conf, "Firm closed fist with thumb wrapped across fingers.");
   }
 
-  // 10. Shikhara: Mushti + Thumb up
+  // 9. Shikhara: Fist with thumb raised vertical
   if (isBent(sIdx) && isBent(sMid) && isBent(sRng) && isBent(sPky) && isExt(sThumb)) {
-    if (sIdx < 0.5 && sMid < 0.5) {
-      const confidence = ((1 - sIdx) + (1 - sMid) + (1 - sRng) + (1 - sPky) + sThumb) / 5;
-      if (confidence > maxConfidence) {
-        maxConfidence = confidence;
-        bestMudra = { name: "Shikhara", confidence, feedback: "Great. Keep the thumb pointing straight up." };
-      }
-    }
+    const conf = ((1 - sIdx) + (1 - sMid) + (1 - sRng) + (1 - sPky) + sThumb) / 5;
+    consider("Shikhara", conf, "Mountain peak gesture. Thumb held upright.");
   }
 
-  // 11. Suchi: Index straight, others bent
-  if (isExt(sIdx) && isBent(sMid) && isBent(sRng) && isBent(sPky) && !isExt(sThumb)) {
-    const confidence = (sIdx + (1 - sMid) + (1 - sRng) + (1 - sPky) + (1 - sThumb)) / 5;
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Suchi", confidence, feedback: "Keep the index finger perfectly straight." };
-    }
+  // 10. Suchi: Index straight; others curled
+  if (isExt(sIdx) && isBent(sMid) && isBent(sRng) && isBent(sPky) && distThumbIndex < 0.12) {
+    const conf = (sIdx + (1 - sMid) + (1 - sRng) + (1 - sPky) + (1 - sThumb)) / 5;
+    consider("Suchi", conf, "Needle gesture. Index pointed straight up.");
   }
 
-  // 12. Chandrakala: Suchi + Thumb extended
-  if (isExt(sIdx) && isBent(sMid) && isBent(sRng) && isBent(sPky) && isExt(sThumb)) {
-    const confidence = (sIdx + (1 - sMid) + (1 - sRng) + (1 - sPky) + sThumb) / 5;
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Chandrakala", confidence, feedback: "Make a nice crescent moon shape." };
-    }
+  // 11. Chandrakala: Index straight, thumb extended outward in L-shape
+  if (isExt(sIdx) && isExt(sThumb) && distThumbIndex >= 0.12 && isBent(sMid) && isBent(sRng) && isBent(sPky)) {
+    const conf = (sIdx + sThumb + (1 - sMid) + (1 - sRng) + (1 - sPky)) / 5;
+    consider("Chandrakala", conf, "Crescent moon shape formed by index and thumb.");
   }
 
-  // 13. Padmakosha: All fingers slightly bent (cup shape)
+  // 12. Padmakosha: All fingers curved inward like a cup
   if (isCurved(sIdx) && isCurved(sMid) && isCurved(sRng) && isCurved(sPky)) {
-    // They should be spread a bit, not touching
-    if (distIdxMid > 0.03 && distMidRng > 0.03) {
-      // Confidence peaks around 0.6 extension
-      const curveScore = (s: number) => 1 - Math.abs(s - 0.6) * 2;
-      const confidence = (curveScore(sIdx) + curveScore(sMid) + curveScore(sRng) + curveScore(sPky)) / 4;
-      if (confidence > maxConfidence) {
-        maxConfidence = confidence;
-        bestMudra = { name: "Padmakosha", confidence, feedback: "Curve hands like holding a small ball." };
-      }
-    }
+    const curveScore = (s: number) => Math.max(0, 1 - Math.abs(s - 0.62) * 2.5);
+    const conf = (curveScore(sIdx) + curveScore(sMid) + curveScore(sRng) + curveScore(sPky)) / 4;
+    consider("Padmakosha", conf, "Lotus bud gesture. Fingers curved inward.");
   }
 
-  
-  // 14. Ardhachandra: Pataka + Thumb extended outwards
-  if (isExt(sIdx) && isExt(sMid) && isExt(sRng) && isExt(sPky) && isExt(sThumb)) {
-    if (distThumbIndex > 0.1) {
-      const confidence = (sIdx + sMid + sRng + sPky + sThumb) / 5;
-      if (confidence > maxConfidence) {
-        maxConfidence = confidence;
-        bestMudra = { name: "Ardhachandra", confidence, feedback: "Keep thumb stretched completely outward." };
-      }
-    }
+  // 13. Sarpashirsha: Flat hand cupped forward
+  if (sIdx > 0.70 && sMid > 0.70 && sRng > 0.70 && sPky > 0.70 && distIdxMid < 0.05) {
+    const conf = (sIdx + sMid + sRng + sPky) / 4;
+    consider("Sarpashirsha", conf, "Snake hood gesture.");
   }
 
-  // 15. Sarpashirsha: Pataka but hollowed palm
-  if (isCurved(sIdx) && isCurved(sMid) && isCurved(sRng) && isCurved(sPky)) {
-    if (distIdxMid < 0.03 && distMidRng < 0.03) {
-      const confidence = (sIdx + sMid + sRng + sPky) / 4;
-      if (confidence > maxConfidence) {
-        maxConfidence = confidence;
-        bestMudra = { name: "Sarpashirsha", confidence, feedback: "Curve your palm to make a snake hood." };
-      }
-    }
+  // 14. Mrigashirsha: Index and pinky up, middle and ring touch thumb
+  if (isExt(sIdx) && isExt(sPky) && distMidThumb < 0.07 && distRngThumb < 0.07) {
+    const conf = (sIdx + sPky + (1 - distMidThumb * 10) + (1 - distRngThumb * 10)) / 4;
+    consider("Mrigashirsha", conf, "Deer head gesture with horns upright.");
   }
 
-  // 16. Simhamukha: Index & Pinky extended, middle & ring touching thumb
-  if (isExt(sIdx) && isExt(sPky) && isBent(sMid) && isBent(sRng)) {
-    if (distMidThumb < 0.05 && distRngThumb < 0.05) {
-      const confidence = (sIdx + sPky + (1 - sMid) + (1 - sRng)) / 4;
-      if (confidence > maxConfidence) {
-        maxConfidence = confidence;
-        bestMudra = { name: "Simhamukha", confidence, feedback: "Excellent lion face. Keep outer fingers straight." };
-      }
-    }
+  // 15. Simhamukha: Index and pinky up, middle and ring touch thumb tip
+  if (isExt(sIdx) && isExt(sPky) && distMidThumb < 0.06 && distRngThumb < 0.06) {
+    const conf = (sIdx + sPky + (1 - distMidThumb * 12) + (1 - distRngThumb * 12)) / 4;
+    consider("Simhamukha", conf, "Lion face gesture.");
   }
 
-  // 17. Mukula: All 5 fingertips touching
-  if (distThumbIndex < 0.05 && distMidThumb < 0.05 && distRngThumb < 0.05 && distPkyThumb < 0.05) {
-    const confidence = 1 - (distThumbIndex + distMidThumb + distRngThumb + distPkyThumb) * 2;
-    if (confidence > maxConfidence && confidence > 0.4) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Mukula", confidence, feedback: "Bring all fingertips to a tight point." };
-    }
+  // 16. Alapadma: Fingers separated and curved outwards
+  if (isCurved(sPky) && isCurved(sRng) && isCurved(sMid) && distIdxMid > 0.04 && distMidRng > 0.04) {
+    const conf = ((1 - Math.abs(sPky - 0.65)) + (1 - Math.abs(sRng - 0.65)) + (1 - Math.abs(sMid - 0.65))) / 3;
+    consider("Alapadma", conf, "Full blooming lotus gesture.");
   }
 
-  // 18. Trishula: Index, Middle, Ring extended. Pinky and Thumb bent.
-  if (isExt(sIdx) && isExt(sMid) && isExt(sRng) && isBent(sPky) && isBent(sThumb)) {
-    const confidence = (sIdx + sMid + sRng + (1 - sPky) + (1 - sThumb)) / 5;
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Trishula", confidence, feedback: "Good trident shape." };
-    }
+  // 17. Mukula: All 5 tips touching together
+  if (distThumbIndex < 0.06 && distMidThumb < 0.06 && distRngThumb < 0.06 && distPkyThumb < 0.06) {
+    const avgDist = (distThumbIndex + distMidThumb + distRngThumb + distPkyThumb) / 4;
+    const conf = Math.max(0, 1 - avgDist * 14);
+    consider("Mukula", conf, "Flower bud. All fingertips brought together.");
   }
 
-  // 8. Alapadma: All spread & curved
-  if (isBent(sIdx) && isBent(sMid) && isBent(sRng) && isBent(sPky)) {
-    if (distIdxMid > 0.04 && distMidRng > 0.04) {
-      const confidence = ((1 - sIdx) + (1 - sMid) + (1 - sRng) + (1 - sPky)) / 4;
-      if (confidence > maxConfidence) {
-        maxConfidence = confidence;
-        bestMudra = { name: "Alapadma", confidence, feedback: "Beautiful lotus. Rotate the palm outward." };
-      }
-    }
+  // 18. Trishula: Thumb touches pinky, index, middle, ring straight
+  if (distPkyThumb < 0.07 && isExt(sIdx) && isExt(sMid) && isExt(sRng)) {
+    const conf = (sIdx + sMid + sRng + (1 - distPkyThumb * 10)) / 4;
+    consider("Trishula", conf, "Trident gesture. Three fingers held upright.");
+  }
+
+  // 19. Ardhachandra: Pataka with thumb stretched wide
+  if (isExt(sIdx) && isExt(sMid) && isExt(sRng) && isExt(sPky) && distThumbIndex > 0.14) {
+    const conf = (sIdx + sMid + sRng + sPky + Math.min(1, distThumbIndex * 6)) / 5;
+    consider("Ardhachandra", conf, "Half moon. Thumb stretched out from flat palm.");
+  }
+
+  // 20. Hamsasya: Index tip touches thumb tip, others straight
+  if (distThumbIndex < 0.06 && isExt(sMid) && isExt(sRng) && isExt(sPky)) {
+    const conf = (1 - distThumbIndex * 12) * ((sMid + sRng + sPky) / 3);
+    consider("Hamsasya", conf, "Swan beak gesture. Thumb and index tips meet.");
   }
 
   if (maxConfidence > 0.5 && bestMudra) {
-    // Calibrate confidence curve: keep clean 0..1 bounded precision
-    bestMudra.confidence = Math.min(1.0, Math.round(bestMudra.confidence * 100) / 100);
     return bestMudra;
   }
 
-  return { name: "No Mudra Detected", confidence: Math.round((maxConfidence || 0) * 100) / 100, feedback: "Adjust your hand position or check the lighting." };
+  return { 
+    name: "No Mudra Detected", 
+    confidence: Math.round((maxConfidence || 0) * 100) / 100, 
+    feedback: "Adjust your hand position in front of the camera." 
+  };
 }
 
-/** 
- * Returns the confidence score for a specific mudra regardless of whether it is the 'best' match.
- * Useful for Practice Mode where we want to see progress towards a specific goal.
- */
-export function getSpecificMudraScore(landmarks: Point[], targetMudra: string, handedness: string): MudraScore {
-  const result = _getSpecificMudraScoreRaw(landmarks, targetMudra, handedness);
-  if (result && result.confidence) {
-    result.confidence = Math.min(1.0, Math.round(result.confidence * 100) / 100);
-  }
-  return result;
-}
+// -----------------------------------------------------------------------------
+// Detailed Practice Mode Evaluator (Kinematic data, per-finger status, corrections)
+// -----------------------------------------------------------------------------
+export function getSpecificMudraScore(landmarks: Point[], targetMudra: string, handedness?: string): MudraScore {
+  const actualBest = classifyMudra(landmarks, handedness);
 
-function _getSpecificMudraScoreRaw(landmarks: Point[], targetMudra: string, handedness?: string): MudraScore {
   const thumbIdx = [1, 2, 3, 4];
   const indexIdx = [5, 6, 7, 8];
   const middleIdx = [9, 10, 11, 12];
@@ -302,230 +267,571 @@ function _getSpecificMudraScoreRaw(landmarks: Point[], targetMudra: string, hand
   const pinkyTip = landmarks[20];
 
   const distThumbRing = calculateDistance(thumbTip, ringTip);
+  const distRngThumb = distThumbRing;
   const distIdxMid = calculateDistance(indexTip, middleTip);
   const distMidRng = calculateDistance(middleTip, ringTip);
+  const distRngPky = calculateDistance(ringTip, pinkyTip);
   const distThumbIndex = calculateDistance(thumbTip, indexTip);
   const distMidThumb = calculateDistance(middleTip, thumbTip);
-  const distRngThumb = calculateDistance(ringTip, thumbTip);
   const distPkyThumb = calculateDistance(pinkyTip, thumbTip);
 
-  const isExt = (s: number) => s > 0.85;
-  const isBent = (s: number) => s < 0.65;
+  const isStraight = (s: number) => s >= 0.78;
+  const isBent = (s: number) => s <= 0.60;
+  const isCurved = (s: number) => s > 0.48 && s < 0.78;
 
-  switch (targetMudra.toLowerCase()) {
+  const fingerStatus: Record<'thumb' | 'index' | 'middle' | 'ring' | 'pinky', FingerStatus> = {
+    thumb: { label: 'Thumb', isCorrect: false, state: isStraight(sThumb) ? 'straight' : 'bent', targetState: 'straight', score: sThumb },
+    index: { label: 'Index', isCorrect: false, state: isStraight(sIdx) ? 'straight' : isBent(sIdx) ? 'bent' : 'curved', targetState: 'straight', score: sIdx },
+    middle: { label: 'Middle', isCorrect: false, state: isStraight(sMid) ? 'straight' : isBent(sMid) ? 'bent' : 'curved', targetState: 'straight', score: sMid },
+    ring: { label: 'Ring', isCorrect: false, state: isStraight(sRng) ? 'straight' : isBent(sRng) ? 'bent' : 'curved', targetState: 'straight', score: sRng },
+    pinky: { label: 'Pinky', isCorrect: false, state: isStraight(sPky) ? 'straight' : isBent(sPky) ? 'bent' : 'curved', targetState: 'straight', score: sPky },
+  };
+
+  const corrections: string[] = [];
+  let confidence = 0;
+  const normalizedTarget = (targetMudra || '').toLowerCase().trim().replace(/[^a-z]/g, '');
+
+  switch (normalizedTarget) {
     case 'pataka': {
-      const togetherScore = 1 - (distIdxMid + distMidRng) * 1.5;
-      let feedback = "Excellent Pataka form.";
-      if (togetherScore < 0.7) feedback = "Bring all fingers closer together.";
-      else if (!isExt(sIdx)) feedback = "Straighten your Index finger.";
-      else if (!isExt(sMid)) feedback = "Straighten your Middle finger.";
-      else if (!isExt(sRng)) feedback = "Straighten your Ring finger.";
-      else if (!isExt(sPky)) feedback = "Straighten your Pinky finger.";
-      else if (distThumbIndex > 0.12) feedback = "Keep your thumb close to your palm (don't stretch it out).";
-      
-      return { 
-        name: "Pataka", 
-        confidence: ((sIdx + sMid + sRng + sPky) / 4) * Math.max(0.1, togetherScore) * (distThumbIndex < 0.12 ? 1 : 0.6),
-        feedback 
-      };
+      fingerStatus.thumb.targetState = 'folded';
+      fingerStatus.thumb.isCorrect = distThumbIndex < 0.13;
+      fingerStatus.index.targetState = 'straight';
+      fingerStatus.index.isCorrect = isStraight(sIdx);
+      fingerStatus.middle.targetState = 'straight';
+      fingerStatus.middle.isCorrect = isStraight(sMid);
+      fingerStatus.ring.targetState = 'straight';
+      fingerStatus.ring.isCorrect = isStraight(sRng);
+      fingerStatus.pinky.targetState = 'straight';
+      fingerStatus.pinky.isCorrect = isStraight(sPky);
+
+      if (!fingerStatus.index.isCorrect) corrections.push('Straighten your index finger.');
+      if (!fingerStatus.middle.isCorrect) corrections.push('Straighten your middle finger.');
+      if (!fingerStatus.ring.isCorrect) corrections.push('Straighten your ring finger.');
+      if (!fingerStatus.pinky.isCorrect) corrections.push('Straighten your pinky finger.');
+      if (distIdxMid > 0.05 || distMidRng > 0.05) corrections.push('Keep all four fingers pressed flush together.');
+      if (!fingerStatus.thumb.isCorrect) corrections.push('Tuck your thumb close to your index finger base.');
+
+      const togetherness = Math.max(0, 1 - (distIdxMid + distMidRng + distRngPky) * 1.6);
+      const extAvg = (sIdx + sMid + sRng + sPky) / 4;
+      confidence = extAvg * 0.7 + togetherness * 0.3;
+      break;
     }
-    
+
     case 'tripataka': {
-      let feedback = "Good Tripataka form.";
-      if (!isExt(sIdx)) feedback = "Keep Index finger straight.";
-      else if (!isExt(sMid)) feedback = "Keep Middle finger straight.";
-      else if (!isBent(sRng)) feedback = "Bend your Ring finger more.";
-      else if (!isExt(sPky)) feedback = "Keep Pinky finger straight.";
-      
-      return { 
-        name: "Tripataka", 
-        confidence: (sIdx + sMid + (1 - sRng) + sPky) / 4,
-        feedback 
-      };
+      fingerStatus.index.targetState = 'straight';
+      fingerStatus.index.isCorrect = isStraight(sIdx);
+      fingerStatus.middle.targetState = 'straight';
+      fingerStatus.middle.isCorrect = isStraight(sMid);
+      fingerStatus.ring.targetState = 'bent';
+      fingerStatus.ring.isCorrect = isBent(sRng);
+      fingerStatus.pinky.targetState = 'straight';
+      fingerStatus.pinky.isCorrect = isStraight(sPky);
+      fingerStatus.thumb.targetState = 'folded';
+      fingerStatus.thumb.isCorrect = distThumbIndex < 0.14;
+
+      if (!fingerStatus.ring.isCorrect) corrections.push('Bend your ring finger forward at the middle joint.');
+      if (!fingerStatus.index.isCorrect) corrections.push('Keep your index finger straight.');
+      if (!fingerStatus.middle.isCorrect) corrections.push('Keep your middle finger straight.');
+      if (!fingerStatus.pinky.isCorrect) corrections.push('Keep your pinky finger extended.');
+
+      confidence = (sIdx + sMid + (1 - sRng) + sPky) / 4;
+      break;
     }
 
     case 'ardhapataka': {
-      let feedback = "Great Ardhapataka.";
-      if (!isExt(sIdx)) feedback = "Straighten your Index finger.";
-      else if (!isExt(sMid)) feedback = "Straighten your Middle finger.";
-      else if (sRng > 0.5) feedback = "Bend your Ring finger fully.";
-      else if (sPky > 0.5) feedback = "Bend your Pinky finger fully.";
-      
-      return { 
-        name: "Ardhapataka", 
-        confidence: (sIdx + sMid + (1 - sRng) + (1 - sPky)) / 4,
-        feedback 
-      };
+      fingerStatus.index.targetState = 'straight';
+      fingerStatus.index.isCorrect = isStraight(sIdx);
+      fingerStatus.middle.targetState = 'straight';
+      fingerStatus.middle.isCorrect = isStraight(sMid);
+      fingerStatus.ring.targetState = 'bent';
+      fingerStatus.ring.isCorrect = isBent(sRng);
+      fingerStatus.pinky.targetState = 'bent';
+      fingerStatus.pinky.isCorrect = isBent(sPky);
+
+      if (!fingerStatus.index.isCorrect || !fingerStatus.middle.isCorrect) {
+        corrections.push('Keep index and middle fingers straight and touching.');
+      }
+      if (!fingerStatus.ring.isCorrect || !fingerStatus.pinky.isCorrect) {
+        corrections.push('Bend both ring and pinky fingers down into your palm.');
+      }
+
+      confidence = (sIdx + sMid + (1 - sRng) + (1 - sPky)) / 4;
+      break;
     }
 
     case 'kartarimukha': {
-      let feedback = "Perfect Kartarimukha v-shape.";
-      if (distIdxMid < 0.08) feedback = "Spread Index and Middle fingers wider.";
-      else if (!isExt(sIdx)) feedback = "Straighten your Index finger.";
-      else if (!isExt(sMid)) feedback = "Straighten your Middle finger.";
-      else if (sRng > 0.5) feedback = "Ring finger should be bent.";
-      
-      return { 
-        name: "Kartarimukha", 
-        confidence: ((sIdx + sMid + (1 - sRng) + (1 - sPky)) / 4) * (distIdxMid > 0.08 ? 1 : 0.6),
-        feedback 
-      };
+      fingerStatus.index.targetState = 'straight';
+      fingerStatus.index.isCorrect = isStraight(sIdx);
+      fingerStatus.middle.targetState = 'straight';
+      fingerStatus.middle.isCorrect = isStraight(sMid);
+      fingerStatus.ring.targetState = 'bent';
+      fingerStatus.ring.isCorrect = isBent(sRng);
+      fingerStatus.pinky.targetState = 'bent';
+      fingerStatus.pinky.isCorrect = isBent(sPky);
+
+      const isWide = distIdxMid >= 0.07;
+      if (!isWide) corrections.push('Spread index and middle fingers into a wide scissors V-shape.');
+      if (!fingerStatus.ring.isCorrect || !fingerStatus.pinky.isCorrect) {
+        corrections.push('Keep ring and pinky fingers bent into the palm.');
+      }
+
+      confidence = ((sIdx + sMid + (1 - sRng) + (1 - sPky)) / 4) * (isWide ? 1.0 : 0.6);
+      break;
     }
 
     case 'mayura': {
-      let feedback = "Beautiful Peacock pose.";
-      if (distThumbRing > 0.06) feedback = "Touch Thumb tip to Ring finger tip.";
-      else if (!isExt(sIdx)) feedback = "Index finger must be straight.";
-      else if (!isExt(sMid)) feedback = "Middle finger must be straight.";
-      else if (!isExt(sPky)) feedback = "Pinky finger must be straight.";
-      
-      return { 
-        name: "Mayura", 
-        confidence: (1 - distThumbRing * 10) * ((sIdx + sMid + sPky) / 3),
-        feedback 
-      };
+      const isTouching = distThumbRing <= 0.065;
+      fingerStatus.ring.targetState = 'touching';
+      fingerStatus.ring.isCorrect = isTouching;
+      fingerStatus.thumb.targetState = 'touching';
+      fingerStatus.thumb.isCorrect = isTouching;
+      fingerStatus.index.targetState = 'straight';
+      fingerStatus.index.isCorrect = isStraight(sIdx);
+      fingerStatus.middle.targetState = 'straight';
+      fingerStatus.middle.isCorrect = isStraight(sMid);
+      fingerStatus.pinky.targetState = 'straight';
+      fingerStatus.pinky.isCorrect = isStraight(sPky);
+
+      if (!isTouching) corrections.push('Touch the tip of your thumb to the tip of your ring finger.');
+      if (!fingerStatus.index.isCorrect) corrections.push('Extend your index finger straight.');
+      if (!fingerStatus.middle.isCorrect) corrections.push('Extend your middle finger straight.');
+      if (!fingerStatus.pinky.isCorrect) corrections.push('Extend your pinky finger straight.');
+
+      confidence = Math.max(0, (1 - distThumbRing * 12)) * ((sIdx + sMid + sPky) / 3);
+      break;
     }
 
     case 'arala': {
-      let feedback = "Arala mudra detected.";
-      if (sIdx > 0.6) feedback = "Bend your Index finger into a hook.";
-      else if (!isExt(sMid)) feedback = "Middle finger should be vertical.";
-      else if (!isExt(sRng)) feedback = "Ring finger should be vertical.";
-      else if (!isExt(sPky)) feedback = "Pinky finger should be vertical.";
-      
-      return { 
-        name: "Arala", 
-        confidence: ((1 - sIdx) + sMid + sRng + sPky) / 4,
-        feedback 
-      };
+      fingerStatus.index.targetState = 'bent';
+      fingerStatus.index.isCorrect = sIdx <= 0.68;
+      fingerStatus.middle.targetState = 'straight';
+      fingerStatus.middle.isCorrect = isStraight(sMid);
+      fingerStatus.ring.targetState = 'straight';
+      fingerStatus.ring.isCorrect = isStraight(sRng);
+      fingerStatus.pinky.targetState = 'straight';
+      fingerStatus.pinky.isCorrect = isStraight(sPky);
+
+      if (!fingerStatus.index.isCorrect) corrections.push('Bend your index finger inward like a curved hook.');
+      if (!fingerStatus.middle.isCorrect || !fingerStatus.ring.isCorrect || !fingerStatus.pinky.isCorrect) {
+        corrections.push('Keep middle, ring, and pinky fingers upright and aligned.');
+      }
+
+      confidence = ((1 - sIdx) + sMid + sRng + sPky) / 4;
+      break;
     }
 
     case 'shukatunda': {
-      let feedback = "Excellent Shukatunda.";
-      if (sIdx > 0.6) feedback = "Index finger should be hooked.";
-      else if (sRng > 0.6) feedback = "Ring finger should be hooked.";
-      else if (!isExt(sMid)) feedback = "Middle finger must be straight.";
-      else if (!isExt(sPky)) feedback = "Pinky must be straight.";
-      
-      return { 
-        name: "Shukatunda", 
-        confidence: ((1 - sIdx) + sMid + (1 - sRng) + sPky) / 4,
-        feedback 
-      };
-    }
+      fingerStatus.index.targetState = 'bent';
+      fingerStatus.index.isCorrect = sIdx <= 0.68;
+      fingerStatus.middle.targetState = 'straight';
+      fingerStatus.middle.isCorrect = isStraight(sMid);
+      fingerStatus.ring.targetState = 'bent';
+      fingerStatus.ring.isCorrect = sRng <= 0.68;
+      fingerStatus.pinky.targetState = 'straight';
+      fingerStatus.pinky.isCorrect = isStraight(sPky);
 
-    case 'alapadma': {
-      let feedback = "Beautiful Alapadma lotus.";
-      const isSpread = distIdxMid > 0.04 && distMidRng > 0.04;
-      if (!isSpread) feedback = "Spread all fingers outward.";
-      else if (sIdx > 0.6) feedback = "Curve your Index finger back.";
-      else if (sMid > 0.6) feedback = "Curve your Middle finger back.";
-      
-      return { 
-        name: "Alapadma", 
-        confidence: ((1 - sIdx) + (1 - sMid) + (1 - sRng) + (1 - sPky)) / 4,
-        feedback 
-      };
+      if (!fingerStatus.index.isCorrect || !fingerStatus.ring.isCorrect) {
+        corrections.push('Bend both index and ring fingers inward into hooks.');
+      }
+      if (!fingerStatus.middle.isCorrect || !fingerStatus.pinky.isCorrect) {
+        corrections.push('Keep middle and pinky fingers extended straight.');
+      }
+
+      confidence = ((1 - sIdx) + sMid + (1 - sRng) + sPky) / 4;
+      break;
     }
 
     case 'mushti': {
-      let feedback = "Good closed fist.";
-      if (!isBent(sIdx)) feedback = "Curl your Index finger tightly.";
-      else if (!isBent(sMid)) feedback = "Curl your Middle finger tightly.";
-      else if (isExt(sThumb)) feedback = "Rest thumb over your fingers.";
-      
-      return {
-        name: "Mushti",
-        confidence: ((1 - sIdx) + (1 - sMid) + (1 - sRng) + (1 - sPky) + (1 - sThumb)) / 5,
-        feedback
-      };
+      fingerStatus.index.targetState = 'bent';
+      fingerStatus.index.isCorrect = isBent(sIdx);
+      fingerStatus.middle.targetState = 'bent';
+      fingerStatus.middle.isCorrect = isBent(sMid);
+      fingerStatus.ring.targetState = 'bent';
+      fingerStatus.ring.isCorrect = isBent(sRng);
+      fingerStatus.pinky.targetState = 'bent';
+      fingerStatus.pinky.isCorrect = isBent(sPky);
+      fingerStatus.thumb.targetState = 'folded';
+      fingerStatus.thumb.isCorrect = sThumb <= 0.75;
+
+      if (!fingerStatus.index.isCorrect || !fingerStatus.middle.isCorrect || !fingerStatus.ring.isCorrect || !fingerStatus.pinky.isCorrect) {
+        corrections.push('Curl all four fingers into a tight fist.');
+      }
+      if (!fingerStatus.thumb.isCorrect) corrections.push('Wrap your thumb across your curled fingers.');
+
+      confidence = ((1 - sIdx) + (1 - sMid) + (1 - sRng) + (1 - sPky) + (1 - sThumb)) / 5;
+      break;
     }
 
     case 'shikhara': {
-      let feedback = "Perfect Shikhara peak.";
-      if (!isExt(sThumb)) feedback = "Extend thumb straight up.";
-      else if (!isBent(sIdx)) feedback = "Keep other fingers curled in a fist.";
-      
-      return {
-        name: "Shikhara",
-        confidence: ((1 - sIdx) + (1 - sMid) + (1 - sRng) + (1 - sPky) + sThumb) / 5,
-        feedback
-      };
+      fingerStatus.index.targetState = 'bent';
+      fingerStatus.index.isCorrect = isBent(sIdx);
+      fingerStatus.middle.targetState = 'bent';
+      fingerStatus.middle.isCorrect = isBent(sMid);
+      fingerStatus.ring.targetState = 'bent';
+      fingerStatus.ring.isCorrect = isBent(sRng);
+      fingerStatus.pinky.targetState = 'bent';
+      fingerStatus.pinky.isCorrect = isBent(sPky);
+      fingerStatus.thumb.targetState = 'straight';
+      fingerStatus.thumb.isCorrect = isStraight(sThumb);
+
+      if (!fingerStatus.thumb.isCorrect) corrections.push('Raise your thumb straight upward like a mountain peak.');
+      if (!fingerStatus.index.isCorrect || !fingerStatus.middle.isCorrect) {
+        corrections.push('Keep the other four fingers tightly closed in a fist.');
+      }
+
+      confidence = ((1 - sIdx) + (1 - sMid) + (1 - sRng) + (1 - sPky) + sThumb) / 5;
+      break;
     }
 
     case 'suchi': {
-      let feedback = "Good Suchi needle.";
-      if (!isExt(sIdx)) feedback = "Extend Index finger completely straight.";
-      else if (!isBent(sMid) || !isBent(sRng)) feedback = "Keep other fingers curled.";
-      else if (isExt(sThumb)) feedback = "Tuck your thumb in.";
-      
-      return {
-        name: "Suchi",
-        confidence: (sIdx + (1 - sMid) + (1 - sRng) + (1 - sPky) + (1 - sThumb)) / 5,
-        feedback
-      };
+      fingerStatus.index.targetState = 'straight';
+      fingerStatus.index.isCorrect = isStraight(sIdx);
+      fingerStatus.middle.targetState = 'bent';
+      fingerStatus.middle.isCorrect = isBent(sMid);
+      fingerStatus.ring.targetState = 'bent';
+      fingerStatus.ring.isCorrect = isBent(sRng);
+      fingerStatus.pinky.targetState = 'bent';
+      fingerStatus.pinky.isCorrect = isBent(sPky);
+
+      if (!fingerStatus.index.isCorrect) corrections.push('Point your index finger straight up like a needle.');
+      if (!fingerStatus.middle.isCorrect || !fingerStatus.ring.isCorrect) {
+        corrections.push('Keep middle, ring, and pinky curled tightly with thumb over them.');
+      }
+
+      confidence = (sIdx + (1 - sMid) + (1 - sRng) + (1 - sPky) + (1 - sThumb)) / 5;
+      break;
     }
 
     case 'chandrakala': {
-      let feedback = "Great crescent moon.";
-      if (!isExt(sIdx)) feedback = "Extend Index finger.";
-      else if (!isExt(sThumb)) feedback = "Extend Thumb outward.";
-      else if (!isBent(sMid)) feedback = "Keep remaining fingers curled.";
-      
-      return {
-        name: "Chandrakala",
-        confidence: (sIdx + (1 - sMid) + (1 - sRng) + (1 - sPky) + sThumb) / 5,
-        feedback
-      };
+      fingerStatus.index.targetState = 'straight';
+      fingerStatus.index.isCorrect = isStraight(sIdx);
+      fingerStatus.thumb.targetState = 'straight';
+      fingerStatus.thumb.isCorrect = isStraight(sThumb) && distThumbIndex >= 0.12;
+      fingerStatus.middle.targetState = 'bent';
+      fingerStatus.middle.isCorrect = isBent(sMid);
+      fingerStatus.ring.targetState = 'bent';
+      fingerStatus.ring.isCorrect = isBent(sRng);
+      fingerStatus.pinky.targetState = 'bent';
+      fingerStatus.pinky.isCorrect = isBent(sPky);
+
+      if (!fingerStatus.index.isCorrect) corrections.push('Point index finger upward.');
+      if (!fingerStatus.thumb.isCorrect) corrections.push('Extend thumb outward to form an L-shaped crescent moon.');
+      if (!fingerStatus.middle.isCorrect) corrections.push('Keep remaining fingers curled into the palm.');
+
+      confidence = (sIdx + sThumb + (1 - sMid) + (1 - sRng) + (1 - sPky)) / 5;
+      break;
     }
 
     case 'padmakosha': {
-      let feedback = "Nice lotus bud.";
-      if (sIdx > 0.85) feedback = "Curve your fingers more.";
-      else if (sIdx < 0.4) feedback = "Don't curl fingers too tightly.";
-      else if (distIdxMid < 0.02) feedback = "Spread fingers slightly apart.";
-      
-      const curveScore = (s: number) => 1 - Math.abs(s - 0.6) * 2;
-      return {
-        name: "Padmakosha",
-        confidence: Math.max(0, (curveScore(sIdx) + curveScore(sMid) + curveScore(sRng) + curveScore(sPky)) / 4),
-        feedback
-      };
+      const curveScore = (s: number) => Math.max(0, 1 - Math.abs(s - 0.62) * 2.5);
+      fingerStatus.index.targetState = 'curved';
+      fingerStatus.index.isCorrect = isCurved(sIdx);
+      fingerStatus.middle.targetState = 'curved';
+      fingerStatus.middle.isCorrect = isCurved(sMid);
+      fingerStatus.ring.targetState = 'curved';
+      fingerStatus.ring.isCorrect = isCurved(sRng);
+      fingerStatus.pinky.targetState = 'curved';
+      fingerStatus.pinky.isCorrect = isCurved(sPky);
+
+      if (!fingerStatus.index.isCorrect || !fingerStatus.middle.isCorrect) {
+        corrections.push('Curve all five fingers inward like a cup holding a lotus bud.');
+      }
+      if (distIdxMid < 0.03) corrections.push('Separate fingers slightly to shape a round bud.');
+
+      confidence = (curveScore(sIdx) + curveScore(sMid) + curveScore(sRng) + curveScore(sPky)) / 4;
+      break;
     }
 
-    
     case 'ardhachandra': {
-      let feedback = "Nice half moon.";
-      if (!isExt(sThumb)) feedback = "Stretch thumb completely away from index.";
-      return { name: "Ardhachandra", confidence: (sIdx + sMid + sRng + sPky + sThumb) / 5, feedback };
-    }
-    case 'sarpashirsha': {
-      const feedback = "Good snake hood.";
-      return { name: "Sarpashirsha", confidence: (sIdx + sMid + sRng + sPky) / 4, feedback };
-    }
-    case 'simhamukha': {
-      let feedback = "Great lion face.";
-      if (!isExt(sIdx) || !isExt(sPky)) feedback = "Keep index and pinky straight.";
-      return { name: "Simhamukha", confidence: (sIdx + sPky + (1 - sMid) + (1 - sRng)) / 4, feedback };
-    }
-    case 'mukula': {
-      const feedback = "Good bud shape.";
-      const confidence = 1 - (distThumbIndex + distMidThumb + distRngThumb + distPkyThumb) * 2;
-      return { name: "Mukula", confidence: Math.max(0, confidence), feedback };
-    }
-    case 'trishula': {
-      let feedback = "Nice trident.";
-      if (!isExt(sRng)) feedback = "Straighten ring finger.";
-      return { name: "Trishula", confidence: (sIdx + sMid + sRng + (1 - sPky) + (1 - sThumb)) / 5, feedback };
+      const isWide = distThumbIndex >= 0.13;
+      fingerStatus.thumb.targetState = 'spread';
+      fingerStatus.thumb.isCorrect = isStraight(sThumb) && isWide;
+      fingerStatus.index.targetState = 'straight';
+      fingerStatus.index.isCorrect = isStraight(sIdx);
+      fingerStatus.middle.targetState = 'straight';
+      fingerStatus.middle.isCorrect = isStraight(sMid);
+      fingerStatus.ring.targetState = 'straight';
+      fingerStatus.ring.isCorrect = isStraight(sRng);
+      fingerStatus.pinky.targetState = 'straight';
+      fingerStatus.pinky.isCorrect = isStraight(sPky);
+
+      if (!isWide) corrections.push('Stretch your thumb far away from your palm to form a wide crescent.');
+      if (!fingerStatus.index.isCorrect || !fingerStatus.middle.isCorrect) {
+        corrections.push('Keep all four fingers straight and flush together.');
+      }
+
+      confidence = ((sIdx + sMid + sRng + sPky) / 4) * (isWide ? 1.0 : 0.55);
+      break;
     }
 
-    default:
-      return { name: targetMudra, confidence: 0, feedback: "Keep practicing the form." };
+    case 'alapadma': {
+      fingerStatus.pinky.targetState = 'curved';
+      fingerStatus.pinky.isCorrect = isCurved(sPky);
+      fingerStatus.ring.targetState = 'curved';
+      fingerStatus.ring.isCorrect = isCurved(sRng);
+      fingerStatus.middle.targetState = 'curved';
+      fingerStatus.middle.isCorrect = isCurved(sMid);
+      fingerStatus.index.targetState = 'curved';
+      fingerStatus.index.isCorrect = isCurved(sIdx);
+
+      const isSeparated = distIdxMid > 0.04 && distMidRng > 0.04;
+      if (!isSeparated) corrections.push('Spread each finger wide starting from the pinky to bloom like a lotus.');
+
+      confidence = ((1 - Math.abs(sPky - 0.65)) + (1 - Math.abs(sRng - 0.65)) + (1 - Math.abs(sMid - 0.65)) + (1 - Math.abs(sIdx - 0.65))) / 4;
+      break;
+    }
+
+    case 'mrigashirsha': {
+      const isTouching = distMidThumb < 0.075 && distRngThumb < 0.075;
+      fingerStatus.index.targetState = 'straight';
+      fingerStatus.index.isCorrect = isStraight(sIdx);
+      fingerStatus.pinky.targetState = 'straight';
+      fingerStatus.pinky.isCorrect = isStraight(sPky);
+      fingerStatus.middle.targetState = 'touching';
+      fingerStatus.middle.isCorrect = isTouching;
+      fingerStatus.ring.targetState = 'touching';
+      fingerStatus.ring.isCorrect = isTouching;
+
+      if (!isTouching) corrections.push('Touch middle and ring fingertips to your thumb tip.');
+      if (!fingerStatus.index.isCorrect || !fingerStatus.pinky.isCorrect) {
+        corrections.push('Extend index and pinky fingers upright like deer horns.');
+      }
+
+      confidence = (sIdx + sPky + (1 - distMidThumb * 10) + (1 - distRngThumb * 10)) / 4;
+      break;
+    }
+
+    case 'simhamukha': {
+      const isTouching = distMidThumb < 0.065 && distRngThumb < 0.065;
+      fingerStatus.index.targetState = 'straight';
+      fingerStatus.index.isCorrect = isStraight(sIdx);
+      fingerStatus.pinky.targetState = 'straight';
+      fingerStatus.pinky.isCorrect = isStraight(sPky);
+      fingerStatus.middle.targetState = 'touching';
+      fingerStatus.middle.isCorrect = isTouching;
+      fingerStatus.ring.targetState = 'touching';
+      fingerStatus.ring.isCorrect = isTouching;
+
+      if (!isTouching) corrections.push('Join middle and ring fingertips to your thumb tip.');
+      if (!fingerStatus.index.isCorrect || !fingerStatus.pinky.isCorrect) {
+        corrections.push('Extend index and pinky fingers outward like a lion\'s ears.');
+      }
+
+      confidence = (sIdx + sPky + (1 - distMidThumb * 12) + (1 - distRngThumb * 12)) / 4;
+      break;
+    }
+
+    case 'mukula': {
+      const isJoined = distThumbIndex < 0.065 && distMidThumb < 0.065 && distRngThumb < 0.065 && distPkyThumb < 0.065;
+      fingerStatus.thumb.targetState = 'touching';
+      fingerStatus.thumb.isCorrect = isJoined;
+      fingerStatus.index.targetState = 'touching';
+      fingerStatus.index.isCorrect = isJoined;
+      fingerStatus.middle.targetState = 'touching';
+      fingerStatus.middle.isCorrect = isJoined;
+      fingerStatus.ring.targetState = 'touching';
+      fingerStatus.ring.isCorrect = isJoined;
+      fingerStatus.pinky.targetState = 'touching';
+      fingerStatus.pinky.isCorrect = isJoined;
+
+      if (!isJoined) corrections.push('Bring all five fingertips together to meet at a single point.');
+
+      const avgDist = (distThumbIndex + distMidThumb + distRngThumb + distPkyThumb) / 4;
+      confidence = Math.max(0, 1 - avgDist * 14);
+      break;
+    }
+
+    case 'trishula': {
+      const isTouching = distPkyThumb < 0.07;
+      fingerStatus.thumb.targetState = 'touching';
+      fingerStatus.thumb.isCorrect = isTouching;
+      fingerStatus.pinky.targetState = 'touching';
+      fingerStatus.pinky.isCorrect = isTouching;
+      fingerStatus.index.targetState = 'straight';
+      fingerStatus.index.isCorrect = isStraight(sIdx);
+      fingerStatus.middle.targetState = 'straight';
+      fingerStatus.middle.isCorrect = isStraight(sMid);
+      fingerStatus.ring.targetState = 'straight';
+      fingerStatus.ring.isCorrect = isStraight(sRng);
+
+      if (!isTouching) corrections.push('Touch your thumb tip to your pinky finger tip across your palm.');
+      if (!fingerStatus.index.isCorrect || !fingerStatus.middle.isCorrect || !fingerStatus.ring.isCorrect) {
+        corrections.push('Extend index, middle, and ring fingers completely straight like a trident.');
+      }
+
+      confidence = (sIdx + sMid + sRng + (1 - distPkyThumb * 10)) / 4;
+      break;
+    }
+
+    case 'hamsasya': {
+      const isTouching = distThumbIndex < 0.065;
+      fingerStatus.index.targetState = 'touching';
+      fingerStatus.index.isCorrect = isTouching;
+      fingerStatus.thumb.targetState = 'touching';
+      fingerStatus.thumb.isCorrect = isTouching;
+      fingerStatus.middle.targetState = 'straight';
+      fingerStatus.middle.isCorrect = isStraight(sMid);
+      fingerStatus.ring.targetState = 'straight';
+      fingerStatus.ring.isCorrect = isStraight(sRng);
+      fingerStatus.pinky.targetState = 'straight';
+      fingerStatus.pinky.isCorrect = isStraight(sPky);
+
+      if (!isTouching) corrections.push('Gently touch the tip of your thumb to the tip of your index finger.');
+      if (!fingerStatus.middle.isCorrect || !fingerStatus.ring.isCorrect || !fingerStatus.pinky.isCorrect) {
+        corrections.push('Spread and extend middle, ring, and pinky fingers like a swan\'s beak.');
+      }
+
+      confidence = Math.max(0, 1 - distThumbIndex * 12) * ((sMid + sRng + sPky) / 3);
+      break;
+    }
+
+    default: {
+      // General fallback evaluator for unspecialized single-hand gestures
+      const extCount = [sIdx, sMid, sRng, sPky].filter(isStraight).length;
+      confidence = extCount / 4;
+      corrections.push(`Adjust fingers to match ${targetMudra} hand reference.`);
+      break;
+    }
   }
+
+  // Clamping confidence
+  confidence = Math.max(0, Math.min(1.0, Math.round(confidence * 100) / 100));
+
+  // Determine feedback string
+  let feedback = '';
+  if (confidence >= 0.85) {
+    feedback = `Perfect ${targetMudra} form. Hold steady!`;
+  } else if (confidence >= 0.50) {
+    feedback = corrections[0] || `Good alignment. Refine your ${targetMudra} gesture.`;
+  } else if (actualBest && actualBest.name !== 'No Mudra Detected' && actualBest.confidence > 0.65) {
+    feedback = `Detected ${actualBest.name} instead. ${corrections[0] || `Form ${targetMudra}.`}`;
+  } else {
+    feedback = corrections[0] || `Align your hand to match ${targetMudra}.`;
+  }
+
+  return {
+    name: targetMudra,
+    confidence,
+    feedback,
+    fingerStatus,
+    corrections,
+    detectedMudraName: actualBest?.name || 'No Mudra Detected',
+    detectedConfidence: actualBest?.confidence || 0,
+  };
 }
 
+// -----------------------------------------------------------------------------
+// Samyukta (Dual-Hand) Specific Evaluator
+// -----------------------------------------------------------------------------
+export function getSpecificSamyuktaScore(hand1: Point[], hand2: Point[], targetMudra: string): MudraScore {
+  const distWrists = calculateDistance(hand1[0], hand2[0]);
+  const distMiddleTips = calculateDistance(hand1[12], hand2[12]);
+  const distPalms = calculateDistance(hand1[9], hand2[9]);
 
-export function classifySamyuktaMudra(hand1: Point[], hand2: Point[]) {
+  const h1 = classifyMudra(hand1, "Left");
+  const h2 = classifyMudra(hand2, "Right");
+
+  const corrections: string[] = [];
+  let confidence = 0;
+  const normalized = (targetMudra || '').toLowerCase().trim().replace(/[^a-z]/g, '');
+
+  switch (normalized) {
+    case 'anjali': {
+      const isPataka = (h1.name === "Pataka" || h1.confidence > 0.7) && (h2.name === "Pataka" || h2.confidence > 0.7);
+      const isWristsClose = distWrists < 0.12;
+      const isTipsClose = distMiddleTips < 0.10;
+
+      if (!isPataka) corrections.push('Keep both hands in flat Pataka mudra.');
+      if (!isWristsClose || !isTipsClose) corrections.push('Press both palms and fingertips flush together.');
+
+      confidence = ((h1.confidence + h2.confidence) / 2) * (isWristsClose && isTipsClose ? 1.0 : 0.5);
+      break;
+    }
+
+    case 'kapota': {
+      const isWristsClose = distWrists < 0.12;
+      const isTipsClose = distMiddleTips < 0.10;
+      const isHollow = distPalms > 0.04;
+
+      if (!isHollow) corrections.push('Hollow the center of your palms so only wrists and fingertips touch.');
+      if (!isWristsClose || !isTipsClose) corrections.push('Keep wrists and fingertips touching.');
+
+      confidence = isWristsClose && isTipsClose && isHollow ? 0.92 : 0.55;
+      break;
+    }
+
+    case 'karkata': {
+      const isInterlocked = distWrists < 0.14 && distPalms < 0.08;
+      if (!isInterlocked) corrections.push('Interlace the fingers of both hands tightly together.');
+      confidence = isInterlocked ? 0.90 : 0.40;
+      break;
+    }
+
+    case 'swastika':
+    case 'swastikadouble': {
+      const isCrossed = distWrists < 0.07;
+      if (!isCrossed) corrections.push('Cross both wrists over each other while keeping palms in Pataka.');
+      confidence = isCrossed ? 0.88 : 0.35;
+      break;
+    }
+
+    case 'shivalinga': {
+      const isPatakaShikhara = (h1.name === "Pataka" && h2.name === "Shikhara") || (h2.name === "Pataka" && h1.name === "Shikhara");
+      const isClose = distWrists < 0.16;
+      if (!isPatakaShikhara) corrections.push('Hold left hand flat in Pataka and right hand in Shikhara on top.');
+      confidence = isPatakaShikhara && isClose ? 0.92 : 0.45;
+      break;
+    }
+
+    case 'pushpaputa': {
+      const isTogether = distWrists < 0.12 && distPalms < 0.10;
+      if (!isTogether) corrections.push('Join both hands side-by-side along the pinky edges to form a bowl.');
+      confidence = isTogether ? 0.86 : 0.40;
+      break;
+    }
+
+    case 'matsya': {
+      const isStacked = distWrists < 0.10 && distPalms < 0.06;
+      if (!isStacked) corrections.push('Stack one palm flat on top of the other with thumbs out like fins.');
+      confidence = isStacked ? 0.90 : 0.45;
+      break;
+    }
+
+    case 'garuda': {
+      const distThumbs = calculateDistance(hand1[4], hand2[4]);
+      const isThumbsLocked = distThumbs < 0.06;
+      if (!isThumbsLocked) corrections.push('Interlock your thumbs and spread both palms wide like wings.');
+      confidence = isThumbsLocked ? 0.89 : 0.40;
+      break;
+    }
+
+    default: {
+      confidence = (h1.confidence + h2.confidence) / 2;
+      corrections.push(`Align both hands to form ${targetMudra}.`);
+      break;
+    }
+  }
+
+  confidence = Math.max(0, Math.min(1.0, Math.round(confidence * 100) / 100));
+  let feedback = '';
+  if (confidence >= 0.82) {
+    feedback = `Perfect ${targetMudra} posture. Hold steady!`;
+  } else {
+    feedback = corrections[0] || `Adjust both hands to form ${targetMudra}.`;
+  }
+
+  return {
+    name: targetMudra,
+    confidence,
+    feedback,
+    corrections,
+    detectedMudraName: `${h1.name} & ${h2.name}`,
+    detectedConfidence: Math.max(h1.confidence, h2.confidence),
+  };
+}
+
+// Legacy helper preserved for live free classification
+export function classifySamyuktaMudra(hand1: Point[], hand2: Point[]): { name: string; confidence: number; feedback: string } | null {
   const h1 = classifyMudra(hand1, "Left");
   const h2 = classifyMudra(hand2, "Right");
   
@@ -533,92 +839,58 @@ export function classifySamyuktaMudra(hand1: Point[], hand2: Point[]) {
 
   const distWrists = calculateDistance(hand1[0], hand2[0]);
   const distMiddleTips = calculateDistance(hand1[12], hand2[12]);
+  const distPalms = calculateDistance(hand1[9], hand2[9]);
 
-  let bestMudra = null;
+  let bestMudra: { name: string; confidence: number; feedback: string } | null = null;
   let maxConfidence = 0;
 
-  // 1. Anjali
-  if (h1.name === "Pataka" && h2.name === "Pataka" && distWrists < 0.1 && distMiddleTips < 0.1) {
-    const confidence = (h1.confidence + h2.confidence) / 2;
+  const consider = (name: string, confidence: number, feedback: string) => {
     if (confidence > maxConfidence) {
       maxConfidence = confidence;
-      bestMudra = { name: "Anjali", confidence, feedback: "Beautiful prayer pose. Keep palms pressed." };
+      bestMudra = { name, confidence, feedback };
     }
+  };
+
+  // 1. Anjali
+  if (h1.name === "Pataka" && h2.name === "Pataka" && distWrists < 0.12 && distMiddleTips < 0.10) {
+    consider("Anjali", (h1.confidence + h2.confidence) / 2, "Beautiful prayer pose. Keep palms pressed.");
   }
 
   // 2. Kapota
-  if ((h1.name === "Pataka" || h1.name === "Padmakosha" || h1.name === "Sarpashirsha") && distWrists < 0.1 && distMiddleTips < 0.1) {
-    const distPalms = calculateDistance(hand1[9], hand2[9]);
-    if (distPalms > 0.05) {
-      const confidence = (h1.confidence + h2.confidence) / 2;
-      if (confidence > maxConfidence) {
-        maxConfidence = confidence;
-        bestMudra = { name: "Kapota", confidence, feedback: "Good pigeon pose. Keep palms hollow." };
-      }
-    }
+  if (distWrists < 0.12 && distMiddleTips < 0.10 && distPalms > 0.05) {
+    consider("Kapota", 0.88, "Good pigeon pose. Center of palms hollowed.");
   }
 
   // 3. Karkata
-  if (distWrists < 0.1 && distMiddleTips > 0.05) {
-    const confidence = 0.8;
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Karkata", confidence, feedback: "Interlock fingers tightly." };
-    }
+  if (distWrists < 0.14 && distPalms < 0.08) {
+    consider("Karkata", 0.85, "Fingers interlocked tightly.");
   }
 
   // 4. Swastika
-  if (distWrists < 0.05 && distMiddleTips > 0.1) {
-    const confidence = (h1.confidence + h2.confidence) / 2;
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Swastika", confidence, feedback: "Good crossed wrists." };
-    }
+  if (distWrists < 0.06) {
+    consider("Swastika", 0.85, "Good crossed wrists.");
   }
 
   // 5. Shivalinga
   if ((h1.name === "Pataka" && h2.name === "Shikhara") || (h2.name === "Pataka" && h1.name === "Shikhara")) {
-    if (distWrists < 0.15) {
-      const confidence = (h1.confidence + h2.confidence) / 2;
-      if (confidence > maxConfidence) {
-        maxConfidence = confidence;
-        bestMudra = { name: "Shivalinga", confidence, feedback: "Excellent Shivalinga. Keep base flat." };
-      }
-    }
+    consider("Shivalinga", 0.90, "Excellent Shivalinga. Base flat with thumb raised.");
   }
 
   // 6. Pushpaputa
-  if (h1.name === "Sarpashirsha" && h2.name === "Sarpashirsha" && distWrists < 0.1) {
-    const confidence = (h1.confidence + h2.confidence) / 2;
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Pushpaputa", confidence, feedback: "Join the sides of your hands to form a bowl." };
-    }
+  if (distWrists < 0.12 && distPalms < 0.10) {
+    consider("Pushpaputa", 0.82, "Flower offering bowl formed by both hands.");
   }
 
   // 7. Matsya
-  if (h1.name === "Pataka" && h2.name === "Pataka" && distWrists < 0.08) {
-    const confidence = (h1.confidence + h2.confidence) / 2;
-    if (confidence > maxConfidence) {
-      maxConfidence = confidence;
-      bestMudra = { name: "Matsya", confidence, feedback: "Place palms exactly on top of each other." };
-    }
-  }
-  
-  // 8. Garuda
-  if ((h1.name === "Ardhachandra" || h1.name === "Alapadma") && distWrists < 0.15) {
-     const distThumbs = calculateDistance(hand1[4], hand2[4]);
-     if (distThumbs < 0.05) {
-       const confidence = (h1.confidence + h2.confidence) / 2;
-       if (confidence > maxConfidence) {
-         maxConfidence = confidence;
-         bestMudra = { name: "Garuda", confidence, feedback: "Interlock thumbs and spread wings wide." };
-       }
-     }
+  if (distWrists < 0.10 && distPalms < 0.06) {
+    consider("Matsya", 0.88, "Palms stacked with thumbs extended like fins.");
   }
 
-  if (maxConfidence > 0.5) {
-    return bestMudra;
+  // 8. Garuda
+  const distThumbs = calculateDistance(hand1[4], hand2[4]);
+  if (distThumbs < 0.06 && distWrists < 0.15) {
+    consider("Garuda", 0.88, "Thumbs interlocked and wings spread wide.");
   }
-  return null;
+
+  return maxConfidence > 0.5 ? bestMudra : null;
 }
