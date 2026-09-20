@@ -4,7 +4,7 @@ High-performance [FastAPI](https://fastapi.tiangolo.com/) microservice providing
 
 ---
 
-## 🌟 Architectural Overview
+## Architectural Overview
 
 ```
 backend/
@@ -25,7 +25,7 @@ backend/
 
 ---
 
-## 🚀 Quickstart & Local Setup
+## Quickstart and Local Setup
 
 ### Prerequisites
 * **Python 3.10+** (Python 3.10.13 recommended)
@@ -64,7 +64,7 @@ uvicorn main:app --reload --port 8000
 
 ---
 
-## 📡 API Endpoints
+## API Endpoints
 
 ### 1. Health & Service Metadata
 `GET /`
@@ -164,7 +164,7 @@ Analyzes 21 3D hand landmarks for real-time posture scoring.
 
 ---
 
-## ☁️ Deployment on Render.com
+## Deployment on Render.com
 
 The backend is fully configured for Render via the root [`render.yaml`](../render.yaml) blueprint:
 

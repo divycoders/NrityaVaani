@@ -15,17 +15,17 @@
 **AI-Powered Indian Classical Dance, Mudra Recognition & 3D Guru Assistant**  
 *On-device computer vision, real-time 3D skeletal kinematics, Goonj-powered multilingual neural voice coaching, and interactive pedagogy for Bharatanatyam.*
 
-[🌐 Live Web App (Netlify)](https://nrityavaaniai.netlify.app) • [⚡ API Service (Render)](https://nrityavaani-backend.onrender.com) • [Quickstart](#-local-development-quickstart) • [Architecture](#-project-architecture) • [Guru Personas](#-goonj-guru-voice-personas) • [Team](#-team--credits)
+[Live Web App](https://nrityavaaniai.netlify.app) • [API Service](https://nrityavaani-backend.onrender.com) • [Quickstart](#local-development-quickstart) • [Architecture](#project-architecture) • [Guru Personas](#goonj-guru-voice-personas) • [Team](#team-and-credits)
 
 </div>
 
 ---
 
-## 📖 Overview
+## Overview
 
 **NrityaVaani** preserves, digitizes, and democratizes the heritage of Indian classical dance through modern web technologies, 3D kinematics, and neural voice synthesis. Built with a **privacy-first architecture**, all live webcam gesture recognition runs **100% on-device** directly in the browser using WebAssembly and WebGL—no video frames or camera streams ever leave your computer.
 
-### 🌟 Key Features
+### Key Features
 
 * **3D Natya Shala Lesson Player (`/learn`)**: Pure, unobstructed 3D stage canvas with dual-gender rigs (male Natyacharya and female dancer), customizable camera presets (*Full Body*, *Face / Abhinaya*, *Mudras*, *Feet*), and dynamic tempo synchronization.
 * **Goonj 3D Guru Voice Coaching**: High-fidelity neural voice synthesis featuring 15 distinct Guru personas across 12 Indian languages (*English, Hindi, Hinglish, Sanskrit, Tamil, Telugu, Malayalam, Kannada, Bengali, Odia, Marathi, Gujarati*).
@@ -38,11 +38,11 @@
 
 ---
 
-## 🏗️ Netlify + Render Deployment Architecture
+## Production Architecture and Live Deployment
 
 NrityaVaani is deployed live in production:
-* 🌐 **Live Web Application (Netlify)**: [**https://nrityavaaniai.netlify.app**](https://nrityavaaniai.netlify.app)
-* ⚡ **Live Neural API Service (Render)**: [**https://nrityavaani-backend.onrender.com**](https://nrityavaani-backend.onrender.com)
+* **Live Web Application (Netlify)**: [https://nrityavaaniai.netlify.app](https://nrityavaaniai.netlify.app)
+* **Live Neural API Service (Render)**: [https://nrityavaani-backend.onrender.com](https://nrityavaani-backend.onrender.com)
 
 ```mermaid
 flowchart LR
@@ -65,17 +65,17 @@ flowchart LR
     end
 
     UI -->|Loads App Bundle| Edge
-    UI -->|Direct On-Device Camera Stream| CV
+    UI -->|Camera Frame Input| CV
     UI -->|Renders 3D Skinned Meshes| Canvas
-    Audio -->|POST /api/tts/speak (Direct or Proxy)| FastAPI
-    FastAPI -->|Stream MP3 Audio Bytes| Audio
+    Audio -->|"Speech Synthesis Request"| FastAPI
+    FastAPI -->|"Stream MP3 Audio"| Audio
     FastAPI --> Cache
     FastAPI --> Goonj
 ```
 
 ---
 
-## 🚀 Deployment Guide: Netlify + Render
+## Deployment Guide: Netlify + Render
 
 Deploying NrityaVaani to production takes less than 5 minutes on free tiers.
 
@@ -83,7 +83,7 @@ Deploying NrityaVaani to production takes less than 5 minutes on free tiers.
 
 1. Log into **[Render.com](https://render.com)** with your GitHub account.
 2. Click **New +** → **Blueprint**.
-3. Select your forked or cloned repository (`divycoders/NrityaVaani`).
+3. Select your repository (`divycoders/NrityaVaani`).
 4. Render automatically parses [`render.yaml`](render.yaml) and creates the service:
    - **Service Name**: `nrityavaani-backend`
    - **Environment**: `Python 3`
@@ -108,22 +108,26 @@ Deploying NrityaVaani to production takes less than 5 minutes on free tiers.
 5. Under **Environment variables**, add:
    | Variable | Value | Description |
    | :--- | :--- | :--- |
-   | `NEXT_PUBLIC_BACKEND_URL` | `https://nrityavaani-backend.onrender.com` | Direct browser API calls for Goonj TTS audio |
+   | `NEXT_PUBLIC_BACKEND_URL` | `https://nrityavaani-backend.onrender.com` | Public backend endpoint for direct client audio requests |
    | `BACKEND_URL` | `https://nrityavaani-backend.onrender.com` | Server-side rewrite proxy destination |
-6. Click **Deploy NrityaVaani**. Netlify builds and deploys your Next.js frontend globally at the edge!
+
+> [!NOTE]
+> **Safety of Backend URLs**: The URL `https://nrityavaani-backend.onrender.com` is a public HTTP endpoint, not a secret credential. It contains no API keys, private tokens, or sensitive data. Next.js variables with the `NEXT_PUBLIC_` prefix are intentionally accessible to the browser.
+
+6. Click **Deploy NrityaVaani**. Netlify builds and deploys your Next.js frontend globally at the edge.
 
 > [!TIP]
-> **Free Tier Cold Starts**: Render's free tier spins down after inactivity. The first TTS request after idle may take a few seconds to warm up; once active, responses are fast and cached. If Render is spinning up, the frontend gracefully falls back to browser-native speech synthesis automatically.
+> **Free Tier Cold Starts**: Render's free tier spins down after inactivity. The first request after an idle period may take several seconds to warm up. If Render is waking up, the frontend automatically and seamlessly falls back to the browser-native SpeechSynthesis API.
 
 ---
 
-## 💻 Local Development Quickstart
+## Local Development Quickstart
 
-You can easily run both the frontend and backend locally for development.
+You can run both the frontend and backend locally for development.
 
 ### 1. Backend (Terminal 1)
 ```bash
-# Navigate to repository root or backend/
+# Navigate to repository root
 cd NrityaVaani
 
 # Create and activate virtual environment
@@ -161,7 +165,7 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser (*Google
 
 ---
 
-## 📁 Project Architecture
+## Project Architecture
 
 ```
 NrityaVaani/
@@ -200,7 +204,7 @@ NrityaVaani/
 
 ---
 
-## 🎙️ Goonj Guru Voice Personas
+## Goonj Guru Voice Personas
 
 NrityaVaani incorporates 15 distinct Guru voice profiles tailored to classical dance pedagogy:
 
@@ -224,7 +228,7 @@ NrityaVaani incorporates 15 distinct Guru voice profiles tailored to classical d
 
 ---
 
-## 🛡️ Privacy & Technical Guarantees
+## Privacy and Technical Guarantees
 
 * **Zero Cloud Video Transmission**: The user's camera stream is evaluated frame-by-frame purely in browser memory through MediaPipe WebAssembly. No video frames, photographs, or landmark coordinates are saved or transmitted to remote servers.
 * **Client-First Fallback**: If the neural voice backend is offline or waking from sleep, the application gracefully and instantly falls back to the native browser SpeechSynthesis API.
@@ -232,9 +236,9 @@ NrityaVaani incorporates 15 distinct Guru voice profiles tailored to classical d
 
 ---
 
-## 👥 Team & Credits
+## Team and Credits
 
-Developed with ❤️ by **DivyCoders**:
+Developed with dedication by **DivyCoders**:
 * **Mayank** — Team Lead
 * **Divyanand Pandey** — Team Lead
 * **Manthan** — Team Member
@@ -242,6 +246,6 @@ Developed with ❤️ by **DivyCoders**:
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).

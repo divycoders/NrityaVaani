@@ -4,7 +4,7 @@ The interactive web client for **NrityaVaani**—an AI-powered Indian classical 
 
 ---
 
-## ⚡ Tech Stack & Architecture
+## Tech Stack and Architecture
 
 * **Framework**: [Next.js 16](https://nextjs.org/) (App Router, Turbopack, React 19 Server & Client Components)
 * **3D Canvas & Kinematics**: [Three.js](https://threejs.org/) with procedural GLB skeletal retargeting (`figures.glb`, `hand.glb`, `natraj.glb`)
@@ -15,7 +15,7 @@ The interactive web client for **NrityaVaani**—an AI-powered Indian classical 
 
 ---
 
-## 📂 Source Structure
+## Source Structure
 
 ```
 frontend/
@@ -57,7 +57,7 @@ frontend/
 
 ---
 
-## 🛠️ Local Development
+## Local Development
 
 ### 1. Install Dependencies
 ```bash
@@ -81,7 +81,7 @@ Visit **[http://localhost:3000](http://localhost:3000)** in your browser (Google
 
 ---
 
-## 🌐 Deploying to Netlify
+## Deploying to Netlify
 
 The frontend is pre-configured for automated continuous deployment on **Netlify** via root [`netlify.toml`](../netlify.toml).
 
