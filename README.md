@@ -1,209 +1,214 @@
 # NrityaVaani (नृत्यवाणी)
 
-> **AI-Powered Indian Classical Dance, Mudra Recognition & 3D Guru Assistant**  
-> On-device computer vision, real-time 3D skeletal kinematics, Goonj-powered multilingual voice coaching, and interactive pedagogy for Bharatanatyam.
+<div align="center">
+
+[![Next.js 16](https://img.shields.io/badge/Next.js-16.3-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![React 19](https://img.shields.io/badge/React-19.2-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
+[![Three.js](https://img.shields.io/badge/Three.js-r185-black?style=for-the-badge&logo=three.js&logoColor=white)](https://threejs.org/)
+[![MediaPipe](https://img.shields.io/badge/MediaPipe-Tasks--Vision-007FFF?style=for-the-badge&logo=google&logoColor=white)](https://developers.google.com/mediapipe)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Netlify Status](https://img.shields.io/badge/Frontend-Netlify-00C7B7?style=for-the-badge&logo=netlify&logoColor=white)](https://www.netlify.com/)
+[![Render Status](https://img.shields.io/badge/Backend-Render-46E3B7?style=for-the-badge&logo=render&logoColor=black)](https://render.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+
+**AI-Powered Indian Classical Dance, Mudra Recognition & 3D Guru Assistant**  
+*On-device computer vision, real-time 3D skeletal kinematics, Goonj-powered multilingual neural voice coaching, and interactive pedagogy for Bharatanatyam.*
+
+[Live Demo](#-netlify--render-deployment-architecture) • [Getting Started](#-local-development-quickstart) • [Architecture](#-project-architecture) • [Guru Personas](#-goonj-guru-voice-personas) • [Team](#-team--credits)
+
+</div>
 
 ---
 
-## Overview
+## 📖 Overview
 
-**NrityaVaani** preserves, digitizes, and democratizes the heritage of Indian classical dance through modern web technologies, 3D kinematics, and neural voice synthesis. Built with privacy-first principles, all live webcam gesture recognition runs **100% on-device** directly in the browser—no video frames or camera streams ever leave your computer.
+**NrityaVaani** preserves, digitizes, and democratizes the heritage of Indian classical dance through modern web technologies, 3D kinematics, and neural voice synthesis. Built with a **privacy-first architecture**, all live webcam gesture recognition runs **100% on-device** directly in the browser using WebAssembly and WebGL—no video frames or camera streams ever leave your computer.
 
-### Key Features
+### 🌟 Key Features
 
-* **Goonj 3D Guru Voice Coaching (`/learn`)**: High-fidelity neural voice synthesis featuring 15 distinct Guru personas across 12 Indian languages (English, Hindi, Hinglish, Sanskrit, Tamil, Telugu, Malayalam, Kannada, Bengali, Odia, Marathi, Gujarati) with dynamic tempo synchronization.
-* **Specialized Guru Voice Models**: Select from classical master archetypes tailored to pedagogical goals—from Natyacharyas commanding adavu footwork and tala, to lyrical preceptors guiding subtle abhinaya and sacred Sanskrit shlokas.
-* **Distraction-Free 3D Natya Shala**: Pure, unobstructed 3D stage canvas with dual-gender rigs (male Natyacharya and female dancer), customizable camera presets (`Full Body`, `Face / Abhinaya`, `Mudras`, `Feet`), and instant frame fitting.
-* **Live Mudra Detection (`/live`)**: Real-time 21-point 3D hand tracking at 60 FPS identifying Asamyukta (single-hand) and Samyukta (double-hand) classical mudras.
-* **Targeted Practice Coach (`/practice/[slug]`)**: Real-time posture scoring against target gestures with interactive feedback.
-* **Mudra Encyclopedia (`/library`)**: Interactive 3D reference library covering 28 classical mudras with step-by-step instructions, viniyoga (usages), and common mistake corrections.
+* **3D Natya Shala Lesson Player (`/learn`)**: Pure, unobstructed 3D stage canvas with dual-gender rigs (male Natyacharya and female dancer), customizable camera presets (*Full Body*, *Face / Abhinaya*, *Mudras*, *Feet*), and dynamic tempo synchronization.
+* **Goonj 3D Guru Voice Coaching**: High-fidelity neural voice synthesis featuring 15 distinct Guru personas across 12 Indian languages (*English, Hindi, Hinglish, Sanskrit, Tamil, Telugu, Malayalam, Kannada, Bengali, Odia, Marathi, Gujarati*).
+* **Live Mudra Recognition (`/live`)**: Real-time 21-point 3D hand tracking at 60 FPS identifying Asamyukta (single-hand) and Samyukta (double-hand) classical mudras on-device.
+* **Targeted Practice Coach (`/practice`)**: Real-time posture scoring against target gestures with interactive feedback, hold timers, and streak tracking.
+* **Interactive 3D Mudra Encyclopedia (`/library`)**: 3D reference library covering 28 classical mudras with step-by-step instructions, viniyoga (usages), and common mistake corrections.
 * **3D Motion Capture Lab (`/mocap`)**: In-browser full-body motion capture, bone jitter filtering, and real-time retargeting to 3D skinned models.
 * **Photograph Analysis (`/upload`)**: Single-image gesture analysis running client-side with instant accuracy feedback.
-* **Private by Design (`/privacy`)**: WebAssembly & WebGL GPU acceleration ensure zero camera feed transmission.
+* **Private by Design (`/privacy`)**: Zero camera feed transmission. All computer vision inference executes locally via Google MediaPipe Tasks-Vision.
 
 ---
 
-## Tech Stack
+## 🏗️ Netlify + Render Deployment Architecture
 
-### Frontend (`/frontend`)
-* **Framework**: [Next.js 16](https://nextjs.org/) (App Router, Turbopack, Server & Client Components)
-* **Core Library**: [React 19](https://react.dev/) & [TypeScript](https://www.typescriptlang.org/)
-* **Styling**: [Tailwind CSS v4](https://tailwindcss.com/) & [Framer Motion](https://www.framer.com/motion/)
-* **Computer Vision AI**: [Google MediaPipe Tasks-Vision](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker) (Client-side WASM & WebGL)
-* **3D Graphics & Kinematics**: [Three.js](https://threejs.org/) (GLTF/GLB models, custom hand kinematics, skeletal retargeting)
-* **Audio Engine**: `GuruAudioEngine` with dynamic tempo sync, speech rate calibration, and memory/disk audio caching
-* **Icons**: [Lucide React](https://lucide.dev/)
+NrityaVaani utilizes a modern decoupled monorepo architecture:
+* **Frontend**: Hosted on **Netlify** with edge caching, automatic Next.js App Router optimization, and Turbopack builds.
+* **Backend**: Hosted on **Render** as a Python 3.10 Web Service with Uvicorn ASGI and Goonj Neural TTS streaming.
 
-### Backend (`/backend`)
-* **Framework**: [FastAPI](https://fastapi.tiangolo.com/) (Python 3.10+)
-* **Server**: [Uvicorn](https://www.uvicorn.org/) (ASGI)
-* **Speech Synthesis Engine**: Neural TTS & Goonj acoustic modulation (Edge Neural TTS + Goonj-1-82M / Kokoro pipeline)
-* **Serverless Bridge**: [Mangum](https://mangum.io/) for Netlify & AWS Lambda serverless execution
-* **Validation**: [Pydantic v2](https://docs.pydantic.dev/)
+```mermaid
+flowchart LR
+    subgraph Client["User Device (Browser)"]
+        UI["Next.js 16 UI / React 19"]
+        CV["MediaPipe WASM (100% Local Inference)"]
+        Canvas["Three.js 3D Natya Shala"]
+        Audio["GuruAudioEngine (Web Audio / Fallback)"]
+    end
 
----
+    subgraph Netlify["Netlify Edge (Frontend)"]
+        Edge["Next.js App Router (@netlify/plugin-nextjs)"]
+        Static["Edge CDN & Static Asset Delivery"]
+    end
 
-## Project Architecture
+    subgraph Render["Render.com (Backend Microservice)"]
+        FastAPI["FastAPI ASGI Server (Python 3.10)"]
+        Goonj["Goonj-1-82M / Kokoro Neural Voice Engine"]
+        Cache["Audio Stream Cache (RAM / Disk)"]
+    end
 
-```
-NrityaVaani/
-├── main.py                       # Root ASGI entrypoint (uvicorn main:app --reload --port 8000)
-├── requirements.txt              # Root Python dependencies
-├── render.yaml                   # Render.com Blueprint configuration (Free Web Service)
-├── netlify.toml                  # Netlify deployment & proxy configuration
-│
-├── docs/                         # Project presentations & academic research materials
-│   ├── presentation/             # NrityaVaani slide deck (.pptx)
-│   └── research/                 # Academic references & benchmarking tables (.html)
-│
-├── netlify/
-│   └── functions/
-│       └── api.py                # Serverless Mangum handler for FastAPI on Netlify
-│
-├── frontend/                     # Next.js 16 + React 19 + Three.js application
-│   ├── next.config.ts            # API rewrites & backend proxy routing
-│   ├── public/
-│   │   ├── images/               # Dance photography & Legends gallery
-│   │   ├── lessons/              # Baked .nvclip motion data and voice audio
-│   │   └── models/               # 3D GLB models (figures.glb, hand.glb, natraj.glb)
-│   ├── scripts/
-│   │   └── build-mudra-poses.mjs # Offline kinematic solver generating mudraPoses.json
-│   └── src/
-│       ├── app/                  # Next.js App Router pages (live, learn, library, mocap, etc.)
-│       ├── components/           # UI, layout, Three.js stages, and 3D Lesson Player
-│       └── lib/
-│           ├── lesson/           # Lesson manifests & multilingual translation dictionaries
-│           ├── motion/           # MediaPipe classification engine & motion codecs
-│           └── voice/            # Goonj Audio Engine & 15 Guru Personas
-│
-└── backend/                      # Python FastAPI inference & Goonj TTS microservice
-    ├── core/
-    │   ├── goonj_tts.py          # Goonj Neural TTS synthesis engine & audio caching
-    │   └── classification.py     # Mathematical heuristic gesture classifier
-    ├── models/                   # Directory for trained model weights (*.pt, *.onnx)
-    ├── main.py                   # FastAPI application routes & endpoints
-    └── requirements.txt          # Backend Python dependencies
+    UI -->|Loads App Bundle| Edge
+    UI -->|Direct On-Device Camera Stream| CV
+    UI -->|Renders 3D Skinned Meshes| Canvas
+    Audio -->|POST /api/tts/speak (Direct or Proxy)| FastAPI
+    FastAPI -->|Stream MP3 Audio Bytes| Audio
+    FastAPI --> Cache
+    FastAPI --> Goonj
 ```
 
 ---
 
-## Getting Started
+## 🚀 Deployment Guide: Netlify + Render
 
-### 1. Run the Backend API
+Deploying NrityaVaani to production takes less than 5 minutes on free tiers.
 
-You can start the FastAPI backend server directly from the repository root:
+### Step 1: Deploy Backend to Render
 
+1. Log into **[Render.com](https://render.com)** with your GitHub account.
+2. Click **New +** → **Blueprint**.
+3. Select your forked or cloned repository (`divycoders/NrityaVaani`).
+4. Render automatically parses [`render.yaml`](render.yaml) and creates the service:
+   - **Service Name**: `nrityavaani-backend`
+   - **Environment**: `Python 3`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+   - **Health Check Path**: `/`
+   - **Plan**: **Free** ($0/month)
+5. Click **Apply**. Render will build and deploy your backend.
+6. Once deployed, copy your Render service URL (e.g., `https://nrityavaani-backend.onrender.com`).
+
+---
+
+### Step 2: Deploy Frontend to Netlify
+
+1. Log into **[Netlify.com](https://www.netlify.com)** with your GitHub account.
+2. Click **Add new site** → **Import an existing project** → **GitHub**.
+3. Select `divycoders/NrityaVaani`.
+4. Netlify automatically reads [`netlify.toml`](netlify.toml):
+   - **Base directory**: `frontend`
+   - **Build command**: `npm run build`
+   - **Publish directory**: `.next`
+5. Under **Environment variables**, add:
+   | Variable | Value | Description |
+   | :--- | :--- | :--- |
+   | `NEXT_PUBLIC_BACKEND_URL` | `https://nrityavaani-backend.onrender.com` | Direct browser API calls for Goonj TTS audio |
+   | `BACKEND_URL` | `https://nrityavaani-backend.onrender.com` | Server-side rewrite proxy destination |
+6. Click **Deploy NrityaVaani**. Netlify builds and deploys your Next.js frontend globally at the edge!
+
+> [!TIP]
+> **Free Tier Cold Starts**: Render's free tier spins down after inactivity. The first TTS request after idle may take a few seconds to warm up; once active, responses are fast and cached. If Render is spinning up, the frontend gracefully falls back to browser-native speech synthesis automatically.
+
+---
+
+## 💻 Local Development Quickstart
+
+You can easily run both the frontend and backend locally for development.
+
+### 1. Backend (Terminal 1)
 ```bash
-# 1. Create and activate a Python virtual environment
-python -m venv .venv
+# Navigate to repository root or backend/
+cd NrityaVaani
 
-# On Windows:
+# Create and activate virtual environment
+python -m venv .venv
+# Windows:
 .venv\Scripts\activate
-# On Linux / macOS:
+# macOS / Linux:
 source .venv/bin/activate
 
-# 2. Install dependencies
+# Install backend dependencies
 pip install -r requirements.txt
 
-# 3. Start the server with uvicorn
+# Start FastAPI server on port 8000
 uvicorn main:app --reload --port 8000
 ```
 
-> **Tip**: You can also run from inside the `backend/` folder using `uvicorn backend.main:app --reload --port 8000`.
+Verify backend:
+* Healthcheck: [http://localhost:8000/](http://localhost:8000/)
+* Interactive Swagger Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+* Voice Personas: [http://localhost:8000/api/tts/personas](http://localhost:8000/api/tts/personas)
 
-* **Backend Healthcheck**: [http://localhost:8000/](http://localhost:8000/)
-* **Interactive Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
-* **Goonj TTS Personas Endpoint**: [http://localhost:8000/api/tts/personas](http://localhost:8000/api/tts/personas)
-
----
-
-### 2. Run the Frontend
-
-In a separate terminal:
-
+### 2. Frontend (Terminal 2)
 ```bash
-# 1. Navigate to the frontend directory
-cd frontend
+# In a separate terminal
+cd NrityaVaani/frontend
 
-# 2. Install dependencies
+# Install dependencies
 npm install
 
-# 3. Start the Next.js development server
+# Start Next.js development server
 npm run dev
 ```
 
-Open your browser at **[http://localhost:3000](http://localhost:3000)**.
-
-> **Note**: For optimal 3D rendering and camera landmark tracking, use **Google Chrome** or **Microsoft Edge** with hardware acceleration enabled.
+Open **[http://localhost:3000](http://localhost:3000)** in your browser (*Google Chrome* or *Microsoft Edge* recommended for hardware-accelerated WebGL & WebAssembly).
 
 ---
 
-### 3. Deploying the Backend to Render.com (Free Web Service)
+## 📁 Project Architecture
 
-NrityaVaani is fully configured for automated deployment on **Render.com** via the included [`render.yaml`](render.yaml) blueprint:
-
-#### Option A: One-Click Blueprint Deployment
-1. Log in to [render.com](https://render.com) with your GitHub account.
-2. Click **New +** → **Blueprint**.
-3. Select the **`divycoders/NrityaVaani`** repository.
-4. Render automatically detects [`render.yaml`](render.yaml) and configures:
-   - **Name**: `nrityavaani-backend`
-   - **Runtime**: `Python 3`
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-   - **Health Check**: `/`
-   - **Plan**: **Free** ($0/month)
-5. Click **Apply**. Once built, your backend is live with an HTTPS URL (e.g. `https://nrityavaani-backend.onrender.com`).
-
-#### Option B: Manual Web Service Setup
-1. On Render, click **New +** → **Web Service**.
-2. Connect your repository `divycoders/NrityaVaani`.
-3. Set:
-   - **Name**: `nrityavaani-backend`
-   - **Runtime**: `Python 3`
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-   - **Instance Type**: **Free**
-4. Click **Create Web Service**.
-
-#### Connecting Render Backend with Netlify Frontend
-In your **Netlify Site Configuration** → **Environment variables**, set:
-- **`BACKEND_URL`**: `https://nrityavaani-backend.onrender.com`
-- **`NEXT_PUBLIC_BACKEND_URL`**: `https://nrityavaani-backend.onrender.com`
-
-Netlify and Next.js will automatically proxy all `/api/tts/*` and `/predict` requests to your hosted FastAPI backend, enabling real-time Goonj voice synthesis and gesture predictions!
-
----
-
-### 4. Running with Netlify
-
-NrityaVaani includes full configuration for Netlify deployment and local development via `netlify.toml`:
-
-#### Local Development with Netlify CLI
-If you have the Netlify CLI installed (`npm install -g netlify-cli`):
-
-```bash
-# Runs frontend on port 3000 and proxies API calls to backend
-netlify dev
 ```
-
-#### Deploying on Netlify
-* **Frontend**: Netlify automatically builds `frontend/` using `@netlify/plugin-nextjs`.
-* **Backend API Options**:
-  1. **Netlify Functions**: Pre-configured in `netlify/functions/api.py` with Mangum. Requests to `/api/tts/*` and `/predict` automatically route to the serverless function.
-  2. **Standalone Backend (Render / Railway / Fly.io / VPS)**: Set the `BACKEND_URL` environment variable in your Netlify site settings (e.g. `https://your-api.onrender.com`). Next.js and Netlify will seamlessly proxy all `/api/tts/*` requests to your hosted FastAPI instance.
+NrityaVaani/
+├── backend/                       # Python FastAPI Microservice
+│   ├── core/
+│   │   ├── classification.py      # Mathematical heuristic gesture classifier
+│   │   └── goonj_tts.py           # Goonj neural TTS synthesis & caching engine
+│   ├── models/                    # Model weights storage (.gitkeep)
+│   ├── main.py                    # FastAPI application routes & endpoints
+│   ├── requirements.txt           # Backend Python dependencies
+│   └── README.md                  # Backend developer documentation
+│
+├── frontend/                      # Next.js 16 + React 19 Frontend Web App
+│   ├── public/                    # Static assets, 3D GLBs, dance images
+│   │   ├── images/                # Classical dance photography & legends
+│   │   ├── lessons/               # Pre-baked .nvclip motion and audio data
+│   │   └── models/                # 3D GLB rigs (figures.glb, hand.glb, natraj.glb)
+│   ├── scripts/
+│   │   └── build-mudra-poses.mjs  # Kinematic solver generating mudraPoses.json
+│   ├── src/
+│   │   ├── app/                   # App Router pages (/live, /learn, /library, /mocap)
+│   │   ├── components/            # UI components, 3D Natya Shala stages & canvas rigs
+│   │   └── lib/                   # Motion classification, MediaPipe, voice engines
+│   ├── next.config.ts             # API rewrites & backend proxy routing
+│   ├── package.json               # Frontend dependencies & scripts
+│   ├── tsconfig.json              # TypeScript configuration
+│   └── README.md                  # Frontend developer documentation
+│
+├── netlify.toml                   # Netlify configuration (Frontend build & edge plugins)
+├── render.yaml                    # Render Blueprint (Backend FastAPI web service hosting)
+├── main.py                        # Root ASGI entrypoint (uvicorn main:app --reload)
+├── requirements.txt               # Pinned root Python dependencies
+├── .gitignore                     # Git ignore rules for node_modules, cache & models
+└── README.md                      # Comprehensive project documentation
+```
 
 ---
 
 ## 🎙️ Goonj Guru Voice Personas
 
-NrityaVaani incorporates 15 distinct Guru voices with tailored pedagogy and acoustics:
+NrityaVaani incorporates 15 distinct Guru voice profiles tailored to classical dance pedagogy:
 
-| Persona | Gender | Language / Dialect | Tone & Signature | Best Suited For |
+| Persona | Gender | Language / Dialect | Tone & Signature | Pedagogical Domain |
 | :--- | :--- | :--- | :--- | :--- |
 | **Guru Priya** | Female | Indian English (`en`) | Articulate & Encouraging | Clear diction, contemporary pedagogy & anatomical precision |
 | **Guru Arjun** | Male | Indian English (`en`) | Commanding & Rhythmic | Adavu footwork, energetic rhythm & driving tala |
-| **Guru Ananya** | Female | Indian English (`en`) | Gentle & Melodic | Delicate mudras, abhinaya nuances & beginners |
+| **Guru Ananya** | Female | Indian English (`en`) | Gentle & Melodic | Delicate mudras, abhinaya nuances & beginner guidance |
 | **Guru Kabir** | Male | Indian English (`en`) | Firm & Authoritative | Strict tala, rhythm drills & stamina |
 | **Guru Divya** | Female | Indian English (`en`) | Meticulous & Poised | Body alignment, knee turnout & balance |
 | **Guru Dev** | Male | Indian English (`en`) | Calm & Measured | Meditative flow, breath awareness & slow practice |
@@ -219,18 +224,24 @@ NrityaVaani incorporates 15 distinct Guru voices with tailored pedagogy and acou
 
 ---
 
-## 📚 Documentation & Research
+## 🛡️ Privacy & Technical Guarantees
 
-* **Project Presentation**: Comprehensive slide deck in [`docs/presentation/NrityaVaani_Presentation.pptx`](docs/presentation/NrityaVaani_Presentation.pptx).
-* **Research Citations**: Interactive academic literature catalog in [`docs/research/research_references.html`](docs/research/research_references.html).
-* **Methodology & Accuracy Matrix**: Classification benchmarking table in [`docs/research/research_references_table.html`](docs/research/research_references_table.html).
+* **Zero Cloud Video Transmission**: The user's camera stream is evaluated frame-by-frame purely in browser memory through MediaPipe WebAssembly. No video frames, photographs, or landmark coordinates are saved or transmitted to remote servers.
+* **Client-First Fallback**: If the neural voice backend is offline or waking from sleep, the application gracefully and instantly falls back to the native browser SpeechSynthesis API.
+* **Stateless REST Architecture**: The backend FastAPI service maintains zero user tracking, preserving privacy while serving dynamic voice and inference requests.
 
 ---
 
-## Team & Credits
+## 👥 Team & Credits
 
 Developed with ❤️ by **DivyCoders**:
 * **Mayank** — Team Lead
 * **Divyanand Pandey** — Team Lead
 * **Manthan** — Team Member
 * **Pranav Jithesh** — Team Member
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).

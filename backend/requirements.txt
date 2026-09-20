@@ -1,11 +1,12 @@
-fastapi
-uvicorn
-pydantic
-requests
-edge-tts
-mangum
-# Optional for local Goonj-1-82M on-device PyTorch synthesis:
+# NrityaVaani - Backend Microservice Dependencies
+fastapi>=0.110.0,<1.0.0
+uvicorn[standard]>=0.28.0,<1.0.0
+pydantic>=2.6.0,<3.0.0
+requests>=2.31.0,<3.0.0
+edge-tts>=6.1.10,<7.0.0
+
+# Optional dependencies for local on-device Goonj-1-82M / Kokoro PyTorch synthesis:
 # kokoro>=0.9.0
-# soundfile
-# huggingface_hub
-# torch
+# soundfile>=0.12.1
+# huggingface_hub>=0.20.0
+# torch>=2.1.0

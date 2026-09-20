@@ -210,8 +210,8 @@ export class GuruAudioEngine {
         const errText = await res.text();
         console.warn(`[Goonj Audio] ⚠️ Backend returned non-audio response:`, errText);
       }
-    } catch (err: any) {
-      if (err?.name === "AbortError" || this.activeLineStart !== lineStart) {
+    } catch (err: unknown) {
+      if ((err as { name?: string })?.name === "AbortError" || this.activeLineStart !== lineStart) {
         return;
       }
       this.activeAbortController = null;

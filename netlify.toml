@@ -1,36 +1,25 @@
-# Netlify configuration for NrityaVaani
-# Hosts Next.js frontend with optional Netlify Functions or proxy for FastAPI backend
+# ==============================================================================
+# NrityaVaani - Netlify Production Configuration
+# Hosts the Next.js 16 (React 19 + Turbopack) Frontend at the Edge.
+#
+# Backend Microservice is hosted separately on Render (see render.yaml).
+# Set BACKEND_URL and NEXT_PUBLIC_BACKEND_URL in Netlify Site Settings:
+#   NEXT_PUBLIC_BACKEND_URL = https://nrityavaani-backend.onrender.com
+#   BACKEND_URL             = https://nrityavaani-backend.onrender.com
+# ==============================================================================
 
 [build]
   base = "frontend"
   command = "npm run build"
   publish = ".next"
 
-# Essential Next.js plugin for Netlify
+# Next.js Runtime Plugin for App Router & Server Components
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-# Serverless Python functions (FastAPI via Mangum)
-[functions]
-  directory = "netlify/functions"
-
-# Local development with Netlify CLI ('netlify dev')
+# Local Development using Netlify CLI ('netlify dev')
 [dev]
   framework = "#custom"
   command = "npm run dev"
   port = 3000
   targetPort = 3000
-
-# Backend routing: forwards TTS and inference requests to Netlify serverless functions
-# or to an external backend if BACKEND_URL is set.
-[[redirects]]
-  from = "/api/tts/*"
-  to = "/.netlify/functions/api/api/tts/:splat"
-  status = 200
-  force = false
-
-[[redirects]]
-  from = "/predict"
-  to = "/.netlify/functions/api/predict"
-  status = 200
-  force = false

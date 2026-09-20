@@ -180,10 +180,10 @@ export function clipFor(manifest: Pick<LessonManifest, "clip" | "clips">, sex: "
 }
 
 /** The reading to play for a clip, in the learner's language. */
-export function readingFor<R>(clip: { en?: R; hi: R; [key: string]: any }, lang: Language): R {
+export function readingFor<R>(clip: { en?: R; hi: R; [key: string]: R | undefined }, lang: Language): R {
   if (lang === "hi" || lang === "sa") return clip.hi;
   if (lang === "hing") return clip.hi ?? clip.en ?? clip.hi;
-  if (clip[lang]) return clip[lang];
+  if (clip[lang]) return clip[lang]!;
   return clip.en ?? clip.hi;
 }
 

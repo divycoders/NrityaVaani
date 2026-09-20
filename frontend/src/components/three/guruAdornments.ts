@@ -766,7 +766,7 @@ function buildFemaleHairAndJewelry(
 
   const hPos = hairGeo.attributes.position;
   for (let i = 0; i < hPos.count; i++) {
-    let x = hPos.getX(i);
+    const x = hPos.getX(i);
     let y = hPos.getY(i) + 0.126;
     let z = hPos.getZ(i) + 0.008;
 
