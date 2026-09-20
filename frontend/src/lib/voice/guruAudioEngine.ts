@@ -1,7 +1,11 @@
 import { type Language, type SpokenLine, lineText } from "@/lib/lesson/manifest";
 import { type GuruPersona, getPersona } from "./guruPersonas";
 
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+const API_BASE =
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  (typeof window !== "undefined" && window.location.hostname.includes("netlify.app")
+    ? "https://nrityavaani-backend.onrender.com"
+    : "");
 
 export interface GuruAudioEngineOptions {
   volume?: number;
