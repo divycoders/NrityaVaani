@@ -15,7 +15,7 @@
 **AI-Powered Indian Classical Dance, Mudra Recognition & 3D Guru Assistant**  
 *On-device computer vision, real-time 3D skeletal kinematics, Goonj-powered multilingual neural voice coaching, and interactive pedagogy for Bharatanatyam.*
 
-[Live Web App](https://nrityavaaniai.netlify.app) • [API Service](https://nrityavaani-backend.onrender.com) • [Quickstart](#local-development-quickstart) • [Architecture](#project-architecture) • [Guru Personas](#goonj-guru-voice-personas) • [Team](#team-and-credits)
+[Live Web App](https://nrityavaani-ai.netlify.app) • [API Service](https://nrityavaani-backend.onrender.com) • [Quickstart](#local-development-quickstart) • [Architecture](#project-architecture) • [Guru Personas](#goonj-guru-voice-personas) • [Team](#team-and-credits)
 
 </div>
 
@@ -41,7 +41,7 @@
 ## Production Architecture and Live Deployment
 
 NrityaVaani is deployed live in production:
-* **Live Web Application (Netlify)**: [https://nrityavaaniai.netlify.app](https://nrityavaaniai.netlify.app)
+* **Live Web Application (Netlify)**: [https://nrityavaani-ai.netlify.app](https://nrityavaani-ai.netlify.app)
 * **Live Neural API Service (Render)**: [https://nrityavaani-backend.onrender.com](https://nrityavaani-backend.onrender.com)
 
 ```mermaid
