@@ -5,49 +5,58 @@
 ---
 
 ## 1. What We Were Doing
-Establishing a permanent repository-based project memory and Git collaboration system for multi-computer development, while maintaining the completed Phase 9 (Voice-Led 3D Virtual Classroom) implementation in the working tree.
+Completed the implementation, testing, verification audit, commit, and remote push for:
+1. **Phase 9: Voice-Led 3D Virtual Classroom**
+2. **Phase 10: Permanent Project Memory & Cross-Machine Git Collaboration Workflow**
 
 ---
 
 ## 2. What Was Completed
-1. Created root-level `AGENTS.md` and `.agents/rules/project-workflow.md` defining permanent agent instructions and strict Git rules.
-2. Built the complete `docs/project-memory/` structure:
-   - `PROJECT_OVERVIEW.md`: Vision, target audience, 3D Guru concept, tech stack, differentiators.
-   - `CURRENT_STATE.md`: Detailed inspection status, working vs incomplete features, known limitations.
-   - `DEVELOPMENT_ROADMAP.md`: Status of Phases 1 through 12.
-   - `ARCHITECTURE_DECISIONS.md`: Formal ADRs covering UI, 3D models, TTS, languages, and Git workflow.
-   - `WORK_LOG.md`: Chronological log of all tasks from repository audit to memory creation.
-   - `LAST_PROMPT.md`: Exact verbatim prompt from the user.
-   - `LAST_REPORT.md`: Complete implementation report.
-   - `task-history/` and `reports/`: Complete chronological task archives and implementation reports for Phases 1–9.
-3. Successfully ran all quality checks: 63 frontend tests pass, 26 backend tests pass, `tsc --noEmit` clean, `eslint` clean, `npm run build` clean.
+1. **Voice-Led 3D Virtual Classroom**:
+   - `VirtualClassroom.tsx` mounted at `/learn/[dance]/[lesson]` replacing fragmented players.
+   - Authentic 8-chapter pedagogy structure for all 13 curriculum lessons.
+   - Goonj Neural TTS with live subtitle captioning, speed controls, and zero audio overlap.
+   - 3 concept visualizers: `NrittaNrityaVisualizer`, `AdiTalaVisualizer`, `PostureAlignmentVisualizer`.
+   - Formative multiple-choice checks and browser localStorage progress persistence.
+   - Synchronized context pass-through to `GuruChatPanel`.
+2. **Permanent Project Memory & Multi-Computer System**:
+   - Root-level `AGENTS.md` and `.agents/rules/project-workflow.md`.
+   - Full `docs/project-memory/` suite (`PROJECT_OVERVIEW.md`, `CURRENT_STATE.md`, `DEVELOPMENT_ROADMAP.md`, `ARCHITECTURE_DECISIONS.md`, `WORK_LOG.md`, `SESSION_HANDOFF.md`, `LAST_PROMPT.md`, `LAST_REPORT.md`, `task-history/`, `reports/`).
+3. **Verification & Testing**:
+   - 63 frontend unit tests passing across 12 suites.
+   - 26 backend unit tests passing.
+   - Clean TypeScript (`tsc --noEmit`), clean lint (`npm run lint`), clean production build (`next build`).
+4. **Git Stage, Commit & Push**:
+   - 90 files committed in `5f85cca454eea61962bdf24511e20882bad6b80c`.
+   - Branch `feature/teaching-first-virtual-guru` pushed to remote `origin`.
+   - Local untracked dataset `Bharatanatyam-Mudra-Dataset-master/` safely preserved and untracked.
 
 ---
 
-## 3. What Was Not Completed (Pending User Review)
-- Code has **NOT** been committed or pushed to GitHub, adhering strictly to the final safety rule.
-- Awaiting user verification and the explicit confirmation: `VERIFIED — COMMIT AND PUSH`.
-
----
-
-## 4. Current Git Status
+## 3. Current Git Status
 - **Active Branch:** `feature/teaching-first-virtual-guru`
-- **Latest Remote Commit:** `cc0b3785a6a35b43972c73608aea972f1abebe41` (`Update README.md`)
-- **Working Tree State:** Contains Phase 1–9 modifications and the newly added `docs/project-memory/` files.
-- **Untracked Dataset:** `Bharatanatyam-Mudra-Dataset-master/` intact and excluded.
+- **Latest Commit Hash:** `5f85cca454eea61962bdf24511e20882bad6b80c`
+- **Remote Tracking:** `origin/feature/teaching-first-virtual-guru` (up to date)
+- **Working Tree:** Clean (only `Bharatanatyam-Mudra-Dataset-master/` untracked)
 
 ---
 
-## 5. Exact Next Recommended Action
-1. User reviews the created project memory files and the working tree state.
-2. When satisfied, user issues: `VERIFIED — COMMIT AND PUSH`.
-3. Antigravity will stage the verified files (excluding the dataset), commit with a conventional commit message, push to `feature/teaching-first-virtual-guru`, and update `CURRENT_STATE.md` with the new commit hash.
+## 4. How to Resume on a Different Machine
+When opening this repository on a secondary or friend's laptop:
+1. Open terminal and run:
+   ```bash
+   git checkout feature/teaching-first-virtual-guru
+   git pull origin feature/teaching-first-virtual-guru
+   ```
+2. Inspect `git status` to verify a clean working tree.
+3. Read `AGENTS.md` to re-anchor operational boundaries.
+4. Read `docs/project-memory/SESSION_HANDOFF.md` and `docs/project-memory/CURRENT_STATE.md`.
+5. Proceed directly with the next prioritized deliverable without asking redundant setup questions.
 
 ---
 
-## 6. How to Resume on a Different Machine
-If opening this repository on another computer:
-1. Ensure you have pulled the latest commits on `feature/teaching-first-virtual-guru`.
-2. Inspect `git status` to ensure a clean working tree.
-3. Open `docs/project-memory/SESSION_HANDOFF.md` and `CURRENT_STATE.md`.
-4. Check the "Exact Next Recommended Action" above.
+## 5. Next Recommended Sprint Deliverables
+1. **Phase 11 (Dedicated Chapter Builders for Remaining Lessons)**:
+   - Provide dedicated, custom chapter scripts and quizzes for `sollukattu-art` (oral bols) and `asamyukta-hastas` (mudra slokas), decoupling them from shared suites.
+2. **Phase 12 (Studio Motion Capture Takes Production Preparation)**:
+   - Prepare data capture ingestion schemas for upcoming studio takes (*Natta Adavu*, *Kuditta Mettu*, *Alarippu*).
