@@ -1,3 +1,8 @@
+import {
+  getLanguageConfig,
+  getBcp47Locale,
+  prepareSpokenText,
+} from "@/lib/guru/languageCatalog";
 import { type Language, type SpokenLine, lineText } from "@/lib/lesson/manifest";
 import { type GuruPersona, getPersona } from "./guruPersonas";
 
@@ -16,6 +21,27 @@ export interface GuruAudioEngineOptions {
 }
 
 export class GuruAudioEngine {
+  private static activeInstance: GuruAudioEngine | null = null;
+
+  public static stopAllAudio() {
+    if (GuruAudioEngine.activeInstance) {
+      GuruAudioEngine.activeInstance.stop();
+      GuruAudioEngine.activeInstance = null;
+    }
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+  }
+
+  private computeHash(str: string): string {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) + hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash).toString(36);
+  }
+
   private persona: GuruPersona;
   private lang: Language;
   private volume: number;
@@ -90,6 +116,145 @@ export class GuruAudioEngine {
     if (this.currentAudio) {
       this.currentAudio.playbackRate = rate;
     }
+  }
+
+  /**
+   * Synthesizes and plays a spoken answer from the Guru Assistant.
+   *
+   * @param text - The text explanation to speak
+   * @param onEnd - Optional callback invoked when speech concludes
+   */
+  public async speakAnswer(text: string, onEnd?: () => void): Promise<void> {
+    if (!text || !text.trim() || this.muted) return;
+
+    // Check voice support for the language
+    const langConf = getLanguageConfig(this.lang);
+    if (!langConf.voiceSupport) {
+      console.log(`[GuruAudioEngine] Speech unavailable for ${langConf.name} (${this.lang}) — text-only mode active.`);
+      this.setLoading(false);
+      this.setSpeaking(false);
+      onEnd?.();
+      return;
+    }
+
+    // Coordinate speech: stop any other engine instances to prevent audio overlap
+    GuruAudioEngine.stopAllAudio();
+    GuruAudioEngine.activeInstance = this;
+
+    this.stop();
+    this.setLoading(true);
+
+    const { spokenText } = prepareSpokenText(text, this.lang);
+    if (!spokenText) {
+      this.setLoading(false);
+      onEnd?.();
+      return;
+    }
+
+    const hash = this.computeHash(`${this.persona.id}:${this.lang}:${this.rate}:${spokenText}`);
+    const cacheKey = `answer:${hash}`;
+
+    // 1. Check in-memory audio cache (0ms instant replay)
+    if (this.audioCache.has(cacheKey)) {
+      this.setLoading(false);
+      this.playAnswerUrl(this.audioCache.get(cacheKey)!, onEnd);
+      return;
+    }
+
+    // 2. Fetch authentic neural audio from backend TTS
+    const controller = new AbortController();
+    this.activeAbortController = controller;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/tts/speak`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: spokenText,
+          persona: this.persona.id,
+          lang: this.lang,
+          speed: this.rate,
+        }),
+        signal: controller.signal,
+      });
+
+      this.setLoading(false);
+      this.activeAbortController = null;
+
+      if (res.ok && res.headers.get("content-type")?.includes("audio")) {
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        this.audioCache.set(cacheKey, objectUrl);
+        this.playAnswerUrl(objectUrl, onEnd);
+        return;
+      }
+    } catch (err: unknown) {
+      if ((err as { name?: string })?.name === "AbortError") {
+        this.setLoading(false);
+        return;
+      }
+      this.setLoading(false);
+      console.warn("[GuruAudioEngine] Backend TTS fetch failed, using Web Speech fallback:", err);
+    }
+
+    // 3. Fallback to browser Web Speech API with language-specific locale
+    this.speakAnswerWithWebSpeech(spokenText, onEnd);
+  }
+
+  private playAnswerUrl(url: string, onEnd?: () => void) {
+    if (this.muted) return;
+    this.stop();
+
+    const audio = new Audio(url);
+    this.currentAudio = audio;
+    audio.volume = this.volume;
+    audio.playbackRate = this.rate;
+
+    audio.onended = () => {
+      this.setSpeaking(false);
+      this.currentAudio = null;
+      if (onEnd) onEnd();
+    };
+
+    audio.onerror = () => {
+      this.setSpeaking(false);
+      this.currentAudio = null;
+    };
+
+    this.setSpeaking(true);
+    audio.play().catch(() => {
+      this.setSpeaking(false);
+    });
+  }
+
+  private speakAnswerWithWebSpeech(text: string, onEnd?: () => void) {
+    if (typeof window === "undefined" || !window.speechSynthesis || this.muted) return;
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const bcp47 = getBcp47Locale(this.lang);
+    utterance.lang = bcp47;
+    utterance.pitch = this.persona.voicePitch;
+    utterance.rate = this.persona.voiceRate * this.rate;
+    utterance.volume = this.volume;
+
+    const voices = window.speechSynthesis.getVoices();
+    const match =
+      voices.find((v) => v.lang === bcp47) ||
+      voices.find((v) => v.lang.startsWith(bcp47.split("-")[0])) ||
+      voices.find((v) => v.lang.includes("IN"));
+    if (match) {
+      utterance.voice = match;
+    }
+
+    utterance.onstart = () => this.setSpeaking(true);
+    utterance.onend = () => {
+      this.setSpeaking(false);
+      if (onEnd) onEnd();
+    };
+    utterance.onerror = () => this.setSpeaking(false);
+
+    window.speechSynthesis.speak(utterance);
   }
 
   public stop() {
@@ -353,6 +518,12 @@ export class GuruAudioEngine {
       sa: "hi-IN",
       kn: "kn-IN",
       bn: "bn-IN",
+      mr: "mr-IN",
+      gu: "gu-IN",
+      pa: "pa-IN",
+      or: "or-IN",
+      as: "as-IN",
+      ur: "ur-IN",
     };
 
     utterance.lang = langMap[this.lang] || "en-IN";

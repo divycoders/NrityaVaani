@@ -1,43 +1,54 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
-import LessonPlayer from "@/components/learn/LessonPlayer";
+import VirtualClassroom from "@/components/learn/VirtualClassroom";
 import { DANCES } from "@/lib/constants/dances";
 import { listLessons } from "@/lib/lesson/store";
+import { getLessonBySlug } from "@/lib/curriculum/curriculumData";
 
 type Props = { params: Promise<{ dance: string; lesson: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { lesson: slug } = await params;
+  const { dance: danceSlug, lesson: slug } = await params;
   const lesson = (await listLessons()).find((l) => l.slug === slug);
-  const dance = DANCES.find((d) => d.slug === lesson?.dance);
-  return lesson && dance ? { title: `${lesson.title} · ${dance.name} | NrityaVaani` } : {};
+  const dance = DANCES.find((d) => d.slug === (lesson?.dance || danceSlug));
+  const curr = getLessonBySlug(slug);
+
+  if (curr) {
+    return {
+      title: `${curr.title} · ${dance?.name ?? "Bharatanatyam"} | NrityaVaani Virtual Classroom`,
+      description: curr.subtitle,
+    };
+  }
+
+  return lesson && dance ? { title: `${lesson.title} · ${dance.name} | NrityaVaani Virtual Classroom` } : {};
 }
 
 /**
- * A lesson, as one part of its dance.
+ * Voice-Led 3D Virtual Classroom for all curriculum lessons and motion modules.
  *
- * The player is a client component and loads the lesson itself. What this adds
- * is where the lesson sits — its dance, and which part of it — so the page can
- * say "Part 1" and "back" goes to the right dance. A lesson reached under the
- * wrong dance is sent to its own; one that does not exist is left for the
- * player to report, with its way back.
+ * The 3D Virtual Guru acts as the primary teacher across all lessons:
+ * - 8-chapter pedagogical sequence (Guru Intro, Foundation, Demonstration, Technique, Safety, Recap, Quiz, Next)
+ * - Structured voice narration via Goonj Neural TTS & Vernacular speech
+ * - Authentic 3D motion playback, 3D posture geometry, or concept visualizers
+ * - Dynamic lesson-grounded Guru conversational assistance
  */
 export default async function LessonPage({ params }: Props) {
-  // Parts are uploaded and deleted while the site is running, which renumbers them.
   await connection();
   const { dance: danceSlug, lesson: slug } = await params;
 
   const lessons = await listLessons();
   const lesson = lessons.find((l) => l.slug === slug);
-  if (lesson && lesson.dance !== danceSlug) redirect(`/learn/${lesson.dance}/${lesson.slug}`);
+  if (lesson && lesson.dance !== danceSlug) {
+    redirect(`/learn/${lesson.dance}/${lesson.slug}`);
+  }
 
   const dance = DANCES.find((d) => d.slug === danceSlug);
   const part = lesson ? lessons.filter((l) => l.dance === lesson.dance).indexOf(lesson) + 1 : null;
 
   return (
-    <LessonPlayer
-      slug={slug}
+    <VirtualClassroom
+      lessonSlug={slug}
       dance={dance ? { slug: dance.slug, name: dance.name } : null}
       part={part}
     />

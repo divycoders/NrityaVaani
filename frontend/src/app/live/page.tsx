@@ -182,19 +182,26 @@ export default function LiveDetectionPage() {
       <div className="max-w-[1500px] mx-auto">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div>
-            <Eyebrow tone="primary">live detection</Eyebrow>
+            <div className="flex items-center gap-2">
+              <Eyebrow tone="primary">optional live diagnostic</Eyebrow>
+              <span className="mono text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                Optional Tool
+              </span>
+            </div>
             <h1 className="serif font-normal tracking-[-0.015em] leading-[1.05] text-[clamp(1.7rem,3.6vw,2.6rem)] mt-3">
               Hold a mudra to the camera.
             </h1>
+            <p className="serif text-[0.96rem] text-foreground/65 mt-2 max-w-xl">
+              Camera feedback is completely optional. If you want to learn adavus, mudras, and rhythm step-by-step with the 3D Virtual Guru first, start in <Link href="/learn" className="text-primary hover:underline underline-offset-4 font-medium">The Lessons</Link>.
+            </p>
           </div>
           <p className="mono text-[10px] uppercase tracking-[0.16em] text-foreground/45 max-w-[34ch] leading-relaxed">
             Runs in this tab · no frame is uploaded ·{" "}
-            <Link href="/upload" className="text-primary hover:underline underline-offset-4">
-              read a photo instead
+            <Link href="/library" className="text-primary hover:underline underline-offset-4">
+              browse 3D library
             </Link>
           </p>
         </div>
-
         <Rule className="mt-8 mb-8" />
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-8 gap-y-8 items-start">

@@ -251,6 +251,11 @@ export interface MocapApi {
    */
   focusPreset: (preset: "full" | "face" | "mudras" | "feet") => void;
   /**
+   * Smoothly transitions 3D camera viewpoint without interrupting motion playback.
+   * Options: Front (0°), Side (90° profile), Three-Quarter (45° perspective), Reset (Fit).
+   */
+  setViewpoint: (viewpoint: "front" | "side" | "threeQuarter" | "reset") => void;
+  /**
    * Moves one hand by a world-space offset, approximately.
    *
    * "The hand is too high" is not a rotation of any single joint, so it cannot
@@ -330,6 +335,7 @@ export default function MocapFigure({
 
   const fitToScreenRef = useRef<() => void>(() => {});
   const focusPresetRef = useRef<(preset: "full" | "face" | "mudras" | "feet") => void>(() => {});
+  const setViewpointRef = useRef<(viewpoint: "front" | "side" | "threeQuarter" | "reset") => void>(() => {});
   const zoomInRef = useRef<() => void>(() => {});
   const zoomOutRef = useRef<() => void>(() => {});
 
@@ -526,6 +532,18 @@ export default function MocapFigure({
       }
     };
     focusPresetRef.current = focusPreset;
+
+    const setViewpoint = (viewpoint: "front" | "side" | "threeQuarter" | "reset") => {
+      setActivePreset(viewpoint === "reset" ? "full" : viewpoint);
+      if (viewpoint === "front" || viewpoint === "reset") {
+        fitToScreen();
+      } else if (viewpoint === "side") {
+        animateCameraTo(Math.PI / 2, 0.04, getDefaultDist(), new THREE.Vector3(0, 0.95, 0), 0.45);
+      } else if (viewpoint === "threeQuarter") {
+        animateCameraTo(Math.PI / 4, 0.08, getDefaultDist(), new THREE.Vector3(0, 0.95, 0), 0.45);
+      }
+    };
+    setViewpointRef.current = setViewpoint;
 
     const zoomIn = () => {
       anim.active = false;
@@ -855,6 +873,7 @@ export default function MocapFigure({
       readyRef.current?.({
         fitToScreen,
         focusPreset,
+        setViewpoint,
         pose: (frame: Frame, t?: number) => {
           if (!mesh) {
             return {

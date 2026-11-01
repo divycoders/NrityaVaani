@@ -226,22 +226,25 @@ LANGUAGE_VOICE_MAP = {
     "sa": {"female": "hi-IN-SwaraNeural", "male": "hi-IN-MadhurNeural"},
     "hi": {"female": "hi-IN-SwaraNeural", "male": "hi-IN-MadhurNeural"},
     "hing": {"female": "hi-IN-SwaraNeural", "male": "hi-IN-MadhurNeural"},
+    "ur": {"female": "ur-IN-GulNeural", "male": "ur-IN-SalmanNeural"},
     "en": {"female": "en-IN-NeerjaNeural", "male": "en-IN-PrabhatNeural"},
 }
 
 SUPPORTED_LANGUAGES = [
-    {"code": "en", "name": "English (Indian)", "native": "English", "region": "Pan-India"},
-    {"code": "hi", "name": "Hindi", "native": "हिन्दी", "region": "North India / Kathak"},
-    {"code": "hing", "name": "Hinglish", "native": "Hinglish / हिंग्लिश", "region": "Urban Classical"},
-    {"code": "ta", "name": "Tamil", "native": "தமிழ்", "region": "Tamil Nadu / Bharatanatyam"},
-    {"code": "te", "name": "Telugu", "native": "తెలుగు", "region": "Andhra / Kuchipudi"},
-    {"code": "ml", "name": "Malayalam", "native": "മലയാളം", "region": "Kerala / Kathakali & Mohiniyattam"},
-    {"code": "sa", "name": "Sanskrit", "native": "संस्कृतम्", "region": "Natyashastra / Shlokas"},
-    {"code": "kn", "name": "Kannada", "native": "ಕನ್ನಡ", "region": "Karnataka / Classical"},
-    {"code": "bn", "name": "Bengali", "native": "বাংলা", "region": "Bengal / Classical"},
-    {"code": "or", "name": "Odia", "native": "ଓଡ଼ିଆ", "region": "Odisha / Odissi"},
-    {"code": "mr", "name": "Marathi", "native": "मराठी", "region": "Maharashtra / Classical"},
-    {"code": "gu", "name": "Gujarati", "native": "ગુજરાતી", "region": "Gujarat / Folk & Classical"},
+    {"code": "en", "name": "English (Indian)", "native": "English", "region": "Pan-India", "hasVoice": True},
+    {"code": "hi", "name": "Hindi", "native": "हिन्दी", "region": "North India / Kathak", "hasVoice": True},
+    {"code": "ta", "name": "Tamil", "native": "தமிழ்", "region": "Tamil Nadu / Bharatanatyam", "hasVoice": True},
+    {"code": "te", "name": "Telugu", "native": "తెలుగు", "region": "Andhra / Kuchipudi", "hasVoice": True},
+    {"code": "kn", "name": "Kannada", "native": "ಕನ್ನಡ", "region": "Karnataka / Classical", "hasVoice": True},
+    {"code": "ml", "name": "Malayalam", "native": "മലയാളം", "region": "Kerala / Kathakali & Mohiniyattam", "hasVoice": True},
+    {"code": "bn", "name": "Bengali", "native": "বাংলা", "region": "Bengal / Classical", "hasVoice": True},
+    {"code": "mr", "name": "Marathi", "native": "मराठी", "region": "Maharashtra / Classical", "hasVoice": True},
+    {"code": "gu", "name": "Gujarati", "native": "ગુજરાતી", "region": "Gujarat / Folk & Classical", "hasVoice": True},
+    {"code": "pa", "name": "Punjabi", "native": "ਪੰਜਾਬੀ", "region": "Punjab", "hasVoice": False},
+    {"code": "or", "name": "Odia", "native": "ଓଡ଼ିଆ", "region": "Odisha / Odissi", "hasVoice": False},
+    {"code": "as", "name": "Assamese", "native": "অসমীয়া", "region": "Assam / Sattriya", "hasVoice": False},
+    {"code": "sa", "name": "Sanskrit", "native": "संस्कृतम्", "region": "Natyashastra / Shlokas", "hasVoice": True},
+    {"code": "ur", "name": "Urdu", "native": "اردو", "region": "Pan-India / Kathak", "hasVoice": True},
 ]
 
 class GoonjTTSEngine:
@@ -251,6 +254,7 @@ class GoonjTTSEngine:
     """
     def __init__(self):
         self._persona_map = {p["id"]: p for p in GOONJ_PERSONAS}
+        self.last_error: Optional[str] = None
 
     def get_personas(self) -> List[Dict]:
         return GOONJ_PERSONAS
@@ -268,8 +272,17 @@ class GoonjTTSEngine:
         Synthesizes classical teaching cue into neural MP3 audio.
         Checks persistent disk cache first for instant playback.
         """
-        clean_text = text.strip()
+        import re
+        clean_text = re.sub(r'[*_#`~>]', '', text)
+        clean_text = re.sub(r'\b(Tai)\s+(Ya)\s+(Tai)\s+(Hi)\b', r'\1, \2, \3, \4', clean_text, flags=re.IGNORECASE)
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
         if not clean_text:
+            return None
+
+        # Check for languages without verified neural voice support
+        if lang in ("pa", "or", "as"):
+            self.last_error = f"Neural TTS voice unavailable for '{lang}' (text-only mode supported)"
+            print(f"    [GoonjTTS Engine] Language '{lang}' has no dedicated neural voice. Returning fallback.")
             return None
 
         cache_path = self._get_cache_path(clean_text, persona, lang, speed)
@@ -302,6 +315,7 @@ class GoonjTTSEngine:
                 print(f"    [GoonjTTS Engine] Neural Synthesis complete: {len(audio_bytes)} bytes written to {cache_path.name}")
                 return audio_bytes
         except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
             print(f"    [GoonjTTS Error] Synthesis exception: {e}")
 
         return None

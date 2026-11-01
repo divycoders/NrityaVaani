@@ -21,17 +21,8 @@ const IdentifyMudraHand = dynamic(() => import("@/components/learn/IdentifyMudra
 const HOVER_INTENT_MS = 120;
 
 /**
- * "Identify a mudra": a link to live detection that, on hover, shows the 3D
- * hand forming the mudras the detector knows.
- *
- * The hand is a preview, not a menu. It ignores the pointer and closes as soon
- * as the pointer leaves the button, so it never stands between the reader and
- * the parts listed underneath. Touch has no hover; a tap just follows the link.
- *
- * The scene is built on the first hover and then kept. Closing leaves the card
- * at `display: none` once it has faded, which the hand's own
- * IntersectionObserver reads as off screen, so it stops rendering until the
- * next hover — rather than every hover creating a fresh WebGL context.
+ * "Identify a mudra": an optional link to live camera detection that, on hover,
+ * shows the 3D hand forming the mudras the detector knows.
  */
 export default function IdentifyMudra({ className = "" }: { className?: string }) {
   const [open, setOpen] = useState(false);
@@ -64,18 +55,17 @@ export default function IdentifyMudra({ className = "" }: { className?: string }
           }}
           onPointerLeave={hide}
           onFocus={(e) => {
-            // Keyboard focus only: a click focuses the link too, and is already leaving.
             if (e.currentTarget.matches(":focus-visible")) show(0);
           }}
           onBlur={hide}
           onKeyDown={(e) => {
             if (e.key === "Escape") hide();
           }}
-          className="mono inline-flex items-center gap-2.5 rounded-full bg-primary px-6 py-3 text-[11px] uppercase tracking-[0.16em] text-black transition-colors duration-200 hover:bg-primary/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          className="mono inline-flex items-center gap-2.5 rounded-full border border-foreground/20 bg-background/80 px-6 py-3 text-[11px] uppercase tracking-[0.16em] text-foreground/80 transition-colors duration-200 hover:border-primary/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <Hand className="h-4 w-4" />
-          Identify a mudra
-          <ArrowRight className="h-3.5 w-3.5" />
+          <Hand className="h-4 w-4 text-primary" />
+          Optional: Test a mudra on camera
+          <ArrowRight className="h-3.5 w-3.5 text-primary" />
         </Link>
 
         <div
@@ -99,8 +89,8 @@ export default function IdentifyMudra({ className = "" }: { className?: string }
         </div>
       </div>
 
-      <p id={hintId} className="serif text-[1rem] italic text-foreground/55">
-        Hold a hand gesture up to your camera to see which mudra it is.
+      <p id={hintId} className="serif text-[0.95rem] italic text-foreground/50">
+        Optional check: Hold a gesture to your camera to verify its alignment.
       </p>
     </div>
   );

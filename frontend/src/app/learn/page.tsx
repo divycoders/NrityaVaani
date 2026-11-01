@@ -5,20 +5,17 @@ import { Eyebrow, Headline, Prose, Rule } from "@/components/ui/editorial";
 import { listLessons } from "@/lib/lesson/store";
 
 export const metadata: Metadata = {
-  title: "Learn | NrityaVaani",
-  description: "The seven classical dances of India, each taught part by part.",
+  title: "Learn Classical Dance | 3D Virtual Guru | NrityaVaani",
+  description: "Learn Bharatanatyam and Indian classical dance step-by-step with an interactive 3D Virtual Guru.",
 };
 
 /**
- * The front door of `/learn`: the seven classical dances.
+ * The front door of `/learn`: the classical dance curriculum.
  *
- * Lessons are filed under a dance and taught as its parts, so all this page
- * does is choose the dance. The parts themselves are on that dance's own
- * page, `/learn/<dance>`.
+ * Lessons are filed under a dance and taught as its parts, guided by the
+ * interactive 3D Virtual Guru.
  */
 export default async function LearnPage() {
-  // Parts are uploaded while the site is running, so they are counted on each
-  // request rather than once at build time.
   await connection();
   const parts: Record<string, number> = {};
   for (const lesson of await listLessons()) {
@@ -26,17 +23,23 @@ export default async function LearnPage() {
   }
 
   return (
-    <div className="px-6 pt-32 pb-24">
+    <div className="px-6 pt-32 pb-24 min-h-screen">
       <div className="mx-auto max-w-6xl">
         <header>
-          <Eyebrow tone="primary">lessons</Eyebrow>
+          <div className="flex flex-wrap items-center gap-3">
+            <Eyebrow tone="primary">teaching-first curriculum</Eyebrow>
+            <span className="mono text-[10px] uppercase tracking-[0.16em] text-foreground/40">
+              3d virtual guru &middot; zero camera requirement
+            </span>
+          </div>
           <Headline as="h1" className="mt-3">
-            Learn
+            The Classical Curriculum
           </Headline>
           <Prose className="mt-4">
             <p>
-              The seven classical dances of India. Choose one to see what it is, then
-              learn it the way it is taught — one part at a time.
+              Explore the classical traditions of India through interactive 3D Guru instruction.
+              Choose a dance form to learn its foundational parts, inspect movements from any camera
+              angle at your own pace, and listen to authentic spoken cues across 12 languages.
             </p>
           </Prose>
         </header>

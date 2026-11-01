@@ -47,6 +47,12 @@ class SpeakRequest(BaseModel):
     lang: Optional[str] = "auto"
     speed: Optional[float] = 1.0
 
+class GuruChatRequest(BaseModel):
+    message: str
+    current_lesson_slug: Optional[str] = None
+    persona: Optional[str] = "hi_meera"
+    lang: Optional[str] = "auto"
+
 @app.get("/")
 def read_root():
     return {
@@ -114,14 +120,33 @@ def speak_cue(request: SpeakRequest):
             }
         )
 
-    print(f"    - Result  : Synthesis failed, returning fallback\n")
+    err_detail = getattr(engine, "last_error", None) or "Voice synthesis unavailable"
+    print(f"    - Result  : Synthesis failed ({err_detail}), returning fallback\n")
     return {
         "status": "fallback_web_speech",
-        "message": "Local Goonj weights not ready; using fallback.",
+        "message": f"Neural TTS unavailable ({err_detail}); using browser speech fallback.",
         "text": request.text,
         "persona": persona,
         "lang": request.lang
     }
+
+@app.post("/api/guru/chat")
+def guru_chat(request: GuruChatRequest):
+    """Knowledge-grounded conversational endpoint for the 3D Virtual Guru."""
+    if not request.message or not request.message.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+    if len(request.message.strip()) > 500:
+        raise HTTPException(status_code=400, detail="Question exceeds maximum limit of 500 characters")
+
+    try:
+        from core.guru_assistant import answer_guru_question
+    except ImportError:
+        from backend.core.guru_assistant import answer_guru_question
+
+    res = answer_guru_question(request.message, request.current_lesson_slug)
+    if "error" in res:
+        raise HTTPException(status_code=400, detail=res["error"])
+    return res
 
 if __name__ == "__main__":
     import uvicorn

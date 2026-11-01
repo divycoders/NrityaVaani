@@ -47,21 +47,21 @@ def classify_mudra(landmarks, handedness):
     if ext_idx and ext_mid and ext_rng and ext_pky and dist_idx_mid < 0.05 and dist_mid_rng < 0.05:
         return {"name": "Pataka", "confidence": 0.95, "feedback": "Excellent posture. Keep your palm flat."}
     
-    # 2. Tripataka: Pataka + Ring bent
-    if ext_idx and ext_mid and not ext_rng and ext_pky:
-        return {"name": "Tripataka", "confidence": 0.92, "feedback": "Good. Ensure the ring finger is bent significantly."}
-        
-    # 3. Ardhapataka: Index, Middle straight, Ring, Pinky bent
-    if ext_idx and ext_mid and not ext_rng and not ext_pky:
-        return {"name": "Ardhapataka", "confidence": 0.90, "feedback": "Nice. Keep your index and middle fingers strictly together."}
-        
-    # 4. Kartarimukha: Index, Middle spread V, Ring/Pinky bent
-    if ext_idx and ext_mid and not ext_rng and not ext_pky and dist_idx_mid > 0.1:
-        return {"name": "Kartarimukha", "confidence": 0.88, "feedback": "Great V-shape. Keep the index and middle fingers fully extended."}
-        
-    # 5. Mayura: Ring touching Thumb, others straight
+    # 2. Mayura: Ring touching Thumb, others straight (evaluated before Tripataka)
     if dist_thumb_ring < 0.03 and ext_idx and ext_mid and ext_pky:
         return {"name": "Mayura", "confidence": 0.94, "feedback": "Graceful. Spread your other fingers like a peacock tail."}
+
+    # 3. Tripataka: Pataka + Ring bent (ring not touching thumb)
+    if ext_idx and ext_mid and not ext_rng and ext_pky and dist_thumb_ring >= 0.03:
+        return {"name": "Tripataka", "confidence": 0.92, "feedback": "Good. Ensure the ring finger is bent significantly."}
+        
+    # 4. Kartarimukha: Index, Middle spread in a V-shape, Ring/Pinky bent
+    if ext_idx and ext_mid and not ext_rng and not ext_pky and dist_idx_mid > 0.08:
+        return {"name": "Kartarimukha", "confidence": 0.88, "feedback": "Great V-shape. Keep the index and middle fingers fully extended."}
+
+    # 5. Ardhapataka: Index, Middle straight and held together, Ring/Pinky bent
+    if ext_idx and ext_mid and not ext_rng and not ext_pky and dist_idx_mid <= 0.08:
+        return {"name": "Ardhapataka", "confidence": 0.90, "feedback": "Nice. Keep your index and middle fingers strictly together."}
         
     # 6. Arala: Index bent, others straight
     if not ext_idx and ext_mid and ext_rng and ext_pky:

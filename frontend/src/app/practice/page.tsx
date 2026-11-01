@@ -139,6 +139,18 @@ export default function PracticeHubPage() {
               voice feedback. Select a mudra, hold the gesture to the camera, and refine your precision.
             </p>
           </Prose>
+
+          <div className="mt-6 rounded-xl border border-foreground/15 bg-card/60 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="serif text-[0.95rem] text-foreground/75 leading-relaxed">
+              <strong className="text-foreground font-semibold">Self-practice is optional:</strong> You do not need a camera to learn Bharatanatyam. To study adavus, mudras, and rhythm step-by-step with the 3D Virtual Guru, start with the lessons.
+            </p>
+            <Link
+              href="/learn"
+              className="mono shrink-0 inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-4 py-2 text-[10px] uppercase tracking-[0.16em] text-primary hover:bg-primary/20 transition-colors font-medium"
+            >
+              The Lessons <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
         </header>
 
         {/* Stats & Streak Strip */}

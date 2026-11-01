@@ -20,10 +20,8 @@ import { ThemeToggle } from "@/components/shared/ThemeToggle";
 
 const LINKS = [
   { name: "Learn", href: "/learn" },
-  { name: "Practice", href: "/practice" },
-  { name: "Live", href: "/live" },
   { name: "Library", href: "/library" },
-  { name: "Research", href: "/research" },
+  { name: "Practice", href: "/practice" },
   { name: "Dashboard", href: "/dashboard" },
   { name: "About", href: "/about" },
 ];
@@ -116,10 +114,10 @@ export default function Navbar() {
               </div>
             ) : (
               <Link
-                href="/live"
+                href="/learn"
                 className="mono rounded-full bg-primary text-black px-5 py-2 text-[10px] uppercase tracking-[0.16em] hover:bg-primary/85 transition-colors font-medium"
               >
-                Try Live AI
+                Start Learning
               </Link>
             )}
           </div>
@@ -195,11 +193,11 @@ export default function Navbar() {
               </button>
             ) : (
               <Link
-                href="/live"
+                href="/learn"
                 onClick={() => setOpen(false)}
                 className="mono mt-8 block text-center rounded-full bg-primary text-black py-3 text-[11px] uppercase tracking-[0.16em] font-medium"
               >
-                Try Live AI
+                Start Learning
               </Link>
             )}
           </motion.div>

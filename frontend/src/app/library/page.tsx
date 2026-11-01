@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useMemo, useState } from "react";
 import { MUDRAS } from "@/lib/constants/mudras";
 import MudraCard from "@/components/library/MudraCard";
@@ -49,9 +51,12 @@ export default function LibraryPage() {
           </div>
           <Prose>
             <p>
-              The single-hand gestures of Bharatanatyam, as set down in the Abhinaya Darpana.
-              Each entry carries what the gesture depicts, how the hand is held, and the
-              mistake most often made holding it.
+              The classical hand gestures of Bharatanatyam, as set down in the Abhinaya Darpana.
+              Each entry carries what the gesture depicts, how the hand is held, and common pitfalls.
+              Explore structured lessons in{" "}
+              <Link href="/learn/bharatanatyam/asamyukta-hastas" className="text-primary hover:underline underline-offset-4 font-medium">
+                Level 5 Mudra Knowledge
+              </Link>.
             </p>
           </Prose>
         </div>

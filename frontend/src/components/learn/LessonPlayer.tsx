@@ -1,32 +1,45 @@
 "use client";
 
+import GuruChatPanel from "@/components/guru/GuruChatPanel";
+
 /**
- * A lesson, played.
+ * Demonstrating Virtual Guru - Interactive 3D Lesson Player.
  *
- * The other end of `tools/blender/namaskaram.py`: that keys the take against
- * the teaching video, this plays it back. The figure is driven from the clip
- * frame by frame rather than handed to an `AnimationMixer`, because everything
- * else on the page — the step, her words, the scrubber — has to agree with the
- * pose on screen, and the only way to guarantee that is for one clock to drive
- * all four.
- *
- * That clock is the wall clock, not a frame counter, so the lesson runs at the
- * speed it was danced whatever the display is doing.
+ * Drives the 3D Guru figure frame-by-frame from verified .nvclip motion assets
+ * synchronizing:
+ * - 3D Skeleton and Skinned Mesh (Female / Male)
+ * - Multiple Viewpoints: Front (0°), Side Profile (90°), Three-Quarter (45°), Free Orbit, Fit/Reset
+ * - Multi-speed Playback: 0.5x, 0.75x, 1x
+ * - Step-by-Step Navigation with Scrubber Markers
+ * - Vernacular Audio Narration (Goonj Neural TTS & Web Speech fallback)
+ * - Interactive Conversational Guru with Active Step Context
+ * - Honest In-Production handling for lessons without mocap takes
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
+  AlertCircle,
   ArrowLeft,
+  ArrowRight,
+  Award,
+  BookOpen,
   Check,
+  CheckCircle2,
   ChevronDown,
+  Compass,
+  Eye,
+  EyeOff,
   Globe,
+  MessageSquare,
   Mic,
   Pause,
   Play,
   Repeat,
   RotateCcw,
+  SkipBack,
+  SkipForward,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -40,8 +53,6 @@ import {
   lineText,
   linesIn,
   loadManifest,
-  loadVoice,
-  readingFor,
   stepAt,
   type Language,
   type LessonManifest,
@@ -56,6 +67,8 @@ import {
   type GuruVoiceModelOption,
 } from "@/lib/voice/guruPersonas";
 import { GuruAudioEngine } from "@/lib/voice/guruAudioEngine";
+import { CurriculumProgressService } from "@/lib/services/CurriculumProgressService";
+import { getLessonBySlug } from "@/lib/curriculum/curriculumData";
 import { Eyebrow, Rule } from "@/components/ui/editorial";
 
 const MocapFigure = dynamic(() => import("@/components/three/MocapFigure"), {
@@ -63,7 +76,7 @@ const MocapFigure = dynamic(() => import("@/components/three/MocapFigure"), {
   loading: () => null,
 });
 
-const SPEEDS = [0.5, 1] as const;
+const SPEEDS = [0.5, 0.75, 1] as const;
 
 function clock(t: number) {
   const s = Math.max(0, Math.floor(t));
@@ -75,6 +88,20 @@ const chip =
 const chipOn = "border-primary/70 bg-primary/10 text-primary";
 const chipOff =
   "border-foreground/20 text-foreground/60 hover:border-primary/50 hover:text-primary";
+
+const LESSON_RELATED_MUDRAS: Record<string, { slug: string; name: string }[]> = {
+  namaskaram: [
+    { slug: "anjali", name: "Anjali Mudra" },
+    { slug: "pataka", name: "Pataka Hasta" },
+    { slug: "katakamukha", name: "Katakamukha Hasta" },
+    { slug: "shikhara", name: "Shikhara Hasta" },
+  ],
+  thattadavu: [
+    { slug: "pataka", name: "Pataka Hasta" },
+    { slug: "tripataka", name: "Tripataka Hasta" },
+    { slug: "ardhapataka", name: "Ardhapataka Hasta" },
+  ],
+};
 
 export default function LessonPlayer({
   slug,
@@ -101,6 +128,17 @@ export default function LessonPlayer({
   const [sex, setSex] = useState<Sex>("female");
   const [lang, setLang] = useState<Language>("en");
   const [skeleton, setSkeleton] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<"steps" | "guru">("steps");
+  const [showExplanation, setShowExplanation] = useState(true);
+  const [showSubtitles, setShowSubtitles] = useState(true);
+  const [activeViewpoint, setActiveViewpoint] = useState<"front" | "side" | "threeQuarter" | "reset">("front");
+  const [activePreset, setActivePreset] = useState<"full" | "face" | "mudras" | "feet">("full");
+  const [isSpeakingExplanation, setIsSpeakingExplanation] = useState(false);
+
+  const [isCompleted, setIsCompleted] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return CurriculumProgressService.isCompleted(slug);
+  });
 
   // 3D Guru Voice Persona automatically calibrated to the selected language
   const [persona, setPersona] = useState<GuruPersona>(() => getBestPersonaForLanguage("en", "female"));
@@ -108,7 +146,6 @@ export default function LessonPlayer({
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [showGuruMenu, setShowGuruMenu] = useState(false);
-  const [activePreset, setActivePreset] = useState<"full" | "face" | "mudras" | "feet">("full");
   const voiceModels = useMemo(() => getVoiceModelsForLanguage(lang), [lang]);
 
   // Voice narration — pre-loaded Audio elements, one per spoken line.
@@ -140,20 +177,13 @@ export default function LessonPlayer({
     audioEngineRef.current?.setRate(speed);
   }, [volume, muted, speed]);
 
-  // The pose on screen changes sixty times a second; the step and her words
-  // change eleven and nineteen times in the whole lesson. So the scrubber and
-  // the clock are written straight to the DOM, and only the things that
-  // genuinely change get to re-render the page.
   const apiRef = useRef<MocapApi | null>(null);
-  // Every take the lesson ships, by path — one per figure when it has them.
   const clipsRef = useRef(new Map<string, Clip>());
   const manRef = useRef<LessonManifest | null>(null);
   const scrubRef = useRef<HTMLInputElement>(null);
   const clockRef = useRef<HTMLSpanElement>(null);
   const stepRef = useRef(0);
-  // The showing line's start time, which identifies it; -1 while she is silent.
   const lineRef = useRef(-1);
-  // Scratch for the interpolated pose, reused every frame.
   const poseRef = useRef(new Float32Array(DIMS));
 
   const rafRef = useRef(0);
@@ -171,7 +201,6 @@ export default function LessonPlayer({
 
   const volumeRef = useRef(0.8);
   const mutedRef = useRef(false);
-  // Active line tracker to eliminate 60fps object allocations and enable 0ms fast-path
   const activeLineTrackRef = useRef<{ start: number; lang: Language } | null>(null);
   volumeRef.current = volume;
   mutedRef.current = muted;
@@ -179,14 +208,10 @@ export default function LessonPlayer({
   /** Puts the figure, the scrubber, the step and the caption at `t`. */
   const applyTime = useCallback((t: number) => {
     const man = manRef.current;
-    // The take for the figure on screen, read each time so a swap mid-lesson
-    // picks up that figure's own clip on the very next pose.
     const clip = man && clipsRef.current.get(clipFor(man, sexRef.current));
     if (!clip || !man) return;
     tRef.current = t;
 
-    // Slerped, not the nearest stored frame: the clip is kept at 15 fps on the
-    // understanding that playback fills in between.
     apiRef.current?.show(samplePose(clip, t, poseRef.current));
 
     if (scrubRef.current) scrubRef.current.value = String(t);
@@ -196,6 +221,7 @@ export default function LessonPlayer({
     if (s !== stepRef.current) {
       stepRef.current = s;
       setStep(s);
+      CurriculumProgressService.recordVisit(slug, s);
     }
     const l = lineAt(man.lines, t);
     const id = l?.start ?? -1;
@@ -203,7 +229,7 @@ export default function LessonPlayer({
       lineRef.current = id;
       setLine(l);
     }
-  }, []);
+  }, [slug]);
 
   /** Retire whatever line is speaking. */
   const stopVoice = useCallback(() => {
@@ -211,12 +237,10 @@ export default function LessonPlayer({
     audioEngineRef.current?.stop();
     setIsSpeaking(false);
     setIsLoadingAudio(false);
+    setIsSpeakingExplanation(false);
   }, []);
 
-  /**
-   * Keep the narration on the clock.
-   * Single-source audio via GuruAudioEngine: prevents double voice playback, cracking, and dropped frames.
-   */
+  /** Keep the narration on the clock. */
   const syncVoice = useCallback(
     (t: number) => {
       const man = manRef.current;
@@ -228,7 +252,6 @@ export default function LessonPlayer({
         return;
       }
 
-      // Fast path: Zero allocations and 0ms cost when continuing the active line
       if (
         activeLineTrackRef.current &&
         activeLineTrackRef.current.start === l.start &&
@@ -245,7 +268,6 @@ export default function LessonPlayer({
       const textToSpeak = lineText(l, langRef.current);
       const lineDuration = l.end - l.start;
 
-      // Delegate all playback lifecycle exclusively to Goonj GuruAudioEngine
       void audioEngineRef.current?.syncLine(
         l.start,
         lineDuration,
@@ -263,13 +285,14 @@ export default function LessonPlayer({
       originRef.current +
       ((performance.now() - startedRef.current) / 1000) * speedRef.current;
 
-    // Looping a step is how a step is learnt — the whole reason to sit with one
-    // of these. The current step is read fresh each frame, so turning the loop
-    // on mid-step catches the step you are actually watching.
     const s = man.steps[stepRef.current];
     const end = loopRef.current && s ? s.end : man.duration;
     const back = loopRef.current && s ? s.start : 0;
     if (t >= end) {
+      if (!loopRef.current) {
+        CurriculumProgressService.markCompleted(slug);
+        setIsCompleted(true);
+      }
       t = back;
       originRef.current = back;
       startedRef.current = performance.now();
@@ -278,7 +301,7 @@ export default function LessonPlayer({
     applyTime(t);
     syncVoice(t);
     rafRef.current = requestAnimationFrame(tick);
-  }, [applyTime, syncVoice]);
+  }, [applyTime, syncVoice, slug]);
 
   const play = useCallback(() => {
     if (!manRef.current) return;
@@ -287,8 +310,6 @@ export default function LessonPlayer({
     originRef.current = tRef.current >= duration - 0.05 ? 0 : tRef.current;
     startedRef.current = performance.now();
     setPlaying(true);
-    // Start the narration inside the click, so the browser's autoplay rules
-    // are satisfied by a real gesture rather than a timer a frame later.
     syncVoice(originRef.current);
     rafRef.current = requestAnimationFrame(tick);
   }, [tick, syncVoice]);
@@ -306,12 +327,35 @@ export default function LessonPlayer({
       applyTime(t);
       originRef.current = t;
       startedRef.current = performance.now();
-      // Silence the narration until the next frame re-syncs it (or until Play,
-      // if it was paused) — the figure and her voice should not disagree.
       stopVoice();
     },
     [applyTime, stopVoice],
   );
+
+  const prevStep = useCallback(() => {
+    const man = manRef.current;
+    if (!man || !man.steps.length) return;
+    const curIdx = stepRef.current;
+    const cur = man.steps[curIdx];
+    if (tRef.current > (cur?.start ?? 0) + 1.5 && cur) {
+      seek(cur.start);
+    } else if (curIdx > 0) {
+      seek(man.steps[curIdx - 1].start);
+    } else if (cur) {
+      seek(cur.start);
+    }
+  }, [seek]);
+
+  const nextStep = useCallback(() => {
+    const man = manRef.current;
+    if (!man || !man.steps.length) return;
+    const curIdx = stepRef.current;
+    if (curIdx < man.steps.length - 1) {
+      seek(man.steps[curIdx + 1].start);
+    } else {
+      seek(man.duration);
+    }
+  }, [seek]);
 
   const handleSelectLanguage = useCallback((newLang: Language) => {
     setLang(newLang);
@@ -347,22 +391,17 @@ export default function LessonPlayer({
     }
   }, [seek]);
 
-  // Load the lesson and its clips together — neither is any use alone.
+  // Load the lesson and its clips together
   useEffect(() => {
     const abort = new AbortController();
     let dead = false;
     (async () => {
       try {
         const man = await loadManifest(slug, abort.signal);
-        // Every figure's take up front, so swapping the figure mid-lesson never
-        // leaves the new body waiting on the network in the other one's pose.
-        // All the downloads start at once; they are only read back in turn.
         const paths = [...new Set([man.clip, ...Object.values(man.clips ?? {})])].filter(
           (p): p is string => !!p,
         );
         const pending = paths.map((path) => fetch(path, { signal: abort.signal }));
-        // Awaiting one still throws; this only stops a later one that fails
-        // while an earlier one is being read from surfacing as uncaught.
         pending.forEach((p) => p.catch(() => {}));
         const clips = new Map<string, Clip>();
         for (let i = 0; i < paths.length; i++) {
@@ -376,6 +415,7 @@ export default function LessonPlayer({
         clipsRef.current = clips;
         audioEngineRef.current?.preloadLanguage(man.lines);
         setManifest(man);
+        CurriculumProgressService.recordVisit(slug);
       } catch (err) {
         if (dead || abort.signal.aborted) return;
         setError(err instanceof Error ? err.message : String(err));
@@ -388,11 +428,6 @@ export default function LessonPlayer({
     };
   }, [slug]);
 
-  // Two moments need the figure re-posed without the clock having moved: when
-  // the clip and the model have both arrived, so the page opens on the first
-  // pose rather than an empty stage; and after a figure swap, which builds a
-  // fresh body at rest and does not call `onReady` again — so nothing else
-  // would put the new figure back where the playhead is, in its own take.
   useEffect(() => {
     if (ready && manifest) applyTime(tRef.current);
   }, [sex, ready, manifest, applyTime]);
@@ -405,8 +440,7 @@ export default function LessonPlayer({
     [],
   );
 
-  // Space to play, arrows to scrub, the way any player behaves. Skipped while a
-  // control has focus, so the keys keep their normal meaning there.
+  // Keyboard navigation: Space to play, arrows to scrub, [ and ] for steps
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
@@ -423,13 +457,107 @@ export default function LessonPlayer({
       } else if (e.code === "ArrowRight") {
         e.preventDefault();
         seek(Math.min(man.duration, tRef.current + 2));
+      } else if (e.code === "BracketLeft" || e.code === "KeyP") {
+        e.preventDefault();
+        prevStep();
+      } else if (e.code === "BracketRight" || e.code === "KeyN") {
+        e.preventDefault();
+        nextStep();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [playing, play, pause, seek]);
+  }, [playing, play, pause, seek, prevStep, nextStep]);
 
+  // Handle on-demand spoken explanation
+  const handleToggleSpeakExplanation = () => {
+    const cur = manifest?.steps[step];
+    if (!cur) return;
+    if (isSpeakingExplanation) {
+      stopVoice();
+      return;
+    }
+    const cuesText = cur.cues.join(". ");
+    const speechText = `${cur.name}. ${cur.gloss}. Technique cues: ${cuesText}`;
+    setIsSpeakingExplanation(true);
+    void audioEngineRef.current?.speakAnswer(speechText, () => {
+      setIsSpeakingExplanation(false);
+    });
+  };
+
+  // Step 8: Handle unavailable demonstrations honestly
   if (error) {
+    const curriculumLesson = getLessonBySlug(slug);
+
+    if (curriculumLesson) {
+      return (
+        <div className="min-h-screen px-4 pt-28 pb-32 sm:px-6 sm:pt-36">
+          <div className="mx-auto max-w-4xl">
+            <Link
+              href={backHref}
+              className="mono inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-foreground/50 transition-colors hover:text-primary mb-6"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to {dance?.name ?? "Curriculum"}
+            </Link>
+
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-6 w-6 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-3">
+                  <span className="mono text-[10px] uppercase tracking-[0.18em] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/25">
+                    Motion Demonstration In Production
+                  </span>
+                  <h1 className="serif text-[2rem] sm:text-[2.4rem] leading-tight text-foreground/95">
+                    {curriculumLesson.title}
+                  </h1>
+                  <p className="serif text-[1.05rem] leading-[1.65] text-foreground/80">
+                    Studio 3D motion capture for <strong>{curriculumLesson.title}</strong> is currently in production awaiting Natyacharya recording. The complete theoretical syllabus, sollukattu, and technique cues are documented below for structured study.
+                  </p>
+                </div>
+              </div>
+
+              <Rule className="my-6" />
+
+              <div className="space-y-6">
+                <div>
+                  <Eyebrow tone="primary">Lesson Concepts & Technique Cues</Eyebrow>
+                  <ul className="mt-3 space-y-2">
+                    {curriculumLesson.techniqueCues.map((cue) => (
+                      <li key={cue} className="serif flex gap-2 text-[0.98rem] text-foreground/80 leading-snug">
+                        <span aria-hidden className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                        {cue}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="pt-4 border-t border-foreground/10 flex flex-wrap gap-3">
+                  <Link
+                    href="/learn/bharatanatyam/namaskaram"
+                    className="mono inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-[11px] uppercase tracking-[0.16em] text-black font-semibold hover:bg-primary/85 transition-colors shadow-sm"
+                  >
+                    <Play className="h-3.5 w-3.5" /> Watch Namaskaram (3D Demo)
+                  </Link>
+                  <Link
+                    href="/learn/bharatanatyam/thattadavu"
+                    className="mono inline-flex items-center gap-2 rounded-full border border-primary/50 bg-primary/10 px-4 py-2 text-[11px] uppercase tracking-[0.16em] text-primary hover:bg-primary/20 transition-colors"
+                  >
+                    <Play className="h-3.5 w-3.5" /> Watch Thattadavu (3D Demo)
+                  </Link>
+                  <Link
+                    href="/learn/bharatanatyam"
+                    className="mono inline-flex items-center gap-2 rounded-full border border-foreground/20 px-4 py-2 text-[11px] uppercase tracking-[0.16em] text-foreground/70 hover:text-foreground hover:border-primary/50 transition-colors"
+                  >
+                    Return to Curriculum Overview
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen px-6 pt-40 pb-32">
         <div className="mx-auto max-w-md">
@@ -452,6 +580,7 @@ export default function LessonPlayer({
   }
 
   const current = manifest?.steps[step];
+  const relatedMudras = LESSON_RELATED_MUDRAS[slug] ?? [];
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden px-3 pt-18 pb-20 sm:px-6 sm:pt-32 sm:pb-24">
@@ -471,24 +600,49 @@ export default function LessonPlayer({
           )}
         </div>
 
-        {/* Desktop Header: shown on sm+ screens */}
+        {/* Desktop Header */}
         <div className="hidden sm:block mt-8">
-          <Eyebrow tone="primary">
-            {dance && part ? `${dance.name} · Part ${part}` : "lesson"}
-          </Eyebrow>
-          <h1 className="serif mt-3 text-[2.4rem] leading-[1.05] sm:text-[3rem]">
-            {manifest?.title ?? " "}
-          </h1>
-          <p className="serif mt-2 text-[1.05rem] leading-[1.6] text-foreground/60">
-            {manifest?.subtitle ?? "Loading the take…"}
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <Eyebrow tone="primary">
+                {dance && part ? `${dance.name} · Part ${part}` : "3D Guru Demonstration"}
+              </Eyebrow>
+              <h1 className="serif mt-3 text-[2.4rem] leading-[1.05] sm:text-[3rem]">
+                {manifest?.title ?? " "}
+              </h1>
+              <p className="serif mt-2 text-[1.05rem] leading-[1.6] text-foreground/60">
+                {manifest?.subtitle ?? "Loading the take…"}
+              </p>
+            </div>
+
+            {/* Quick action buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowExplanation((v) => !v)}
+                className={`${chip} ${showExplanation ? chipOn : chipOff} inline-flex items-center gap-1.5`}
+                title={showExplanation ? "Hide step explanation panel" : "Show step explanation panel"}
+              >
+                {showExplanation ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                <span>{showExplanation ? "Hide Explanation" : "Show Explanation"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSubtitles((v) => !v)}
+                className={`${chip} ${showSubtitles ? chipOn : chipOff} inline-flex items-center gap-1.5`}
+                title={showSubtitles ? "Hide subtitles" : "Show subtitles"}
+              >
+                <span>{showSubtitles ? "Subtitles On" : "Subtitles Off"}</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <Rule className="hidden sm:block mt-8" />
 
         <div className="mt-3 sm:mt-8 grid w-full min-w-0 gap-6 sm:gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="w-full min-w-0">
-            {/* 3D Studio Canvas: Portrait almost full screen on mobile (h-[68vh] sm:h-auto sm:aspect-video) */}
+          <div className="w-full min-w-0 space-y-4">
+            {/* 3D Studio Canvas */}
             <div className="relative h-[68vh] sm:h-auto sm:aspect-video w-full min-w-0 overflow-hidden rounded-2xl border border-card-border bg-card shadow-lg">
               <MocapFigure
                 sex={sex}
@@ -501,24 +655,26 @@ export default function LessonPlayer({
                   setReady(true);
                 }}
               />
-              {/* Step label on canvas */}
+
+              {/* Step label overlay on canvas */}
               {current && (
                 <div className="pointer-events-none absolute top-3 left-3 sm:top-4 sm:left-4 z-10">
                   <p className="mono text-[10px] uppercase tracking-[0.22em] text-primary">
                     Step {step + 1} of {manifest?.steps.length}
                   </p>
-                  <p className="serif mt-0.5 sm:mt-1 text-[1.05rem] sm:text-[1.15rem] leading-tight text-foreground/90">
+                  <p className="serif mt-0.5 sm:mt-1 text-[1.05rem] sm:text-[1.2rem] font-semibold leading-tight text-foreground/95">
                     {current.name}
                   </p>
                 </div>
               )}
-              {/* Guru Voice Persona & Live Speaking / Loading indicator */}
+
+              {/* Guru Voice Persona & Live Speaking indicator */}
               <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 flex items-center gap-2 pointer-events-auto">
                 {isLoadingAudio && (
                   <div className="flex items-center gap-1.5 rounded-full bg-primary/20 backdrop-blur-md px-2.5 py-1 border border-primary/40 shadow-sm animate-pulse">
                     <span className="h-2 w-2 rounded-full bg-primary animate-ping"></span>
                     <span className="mono text-[9px] uppercase tracking-[0.16em] text-primary font-semibold">
-                      Generating Voice...
+                      Voice Synthesizing…
                     </span>
                   </div>
                 )}
@@ -529,7 +685,7 @@ export default function LessonPlayer({
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
                     </span>
                     <span className="mono text-[9px] uppercase tracking-[0.16em] text-primary font-semibold">
-                      {persona.name} Speaking
+                      {persona.name} Demonstrating
                     </span>
                   </div>
                 )}
@@ -543,17 +699,28 @@ export default function LessonPlayer({
                   <span className="text-primary font-medium">{persona.name}</span>
                 </div>
               </div>
+
+              {/* Bottom canvas hint */}
+              <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
+                <span className="mono text-[8.5px] uppercase tracking-wider text-foreground/50 bg-black/60 px-2.5 py-0.5 rounded-full backdrop-blur-xs">
+                  Drag to freely orbit · Double-click to zoom
+                </span>
+                <span className="mono text-[8.5px] uppercase tracking-wider text-primary/80 bg-black/60 px-2 py-0.5 rounded-full backdrop-blur-xs">
+                  {speed}&times; Speed
+                </span>
+              </div>
+
               {!manifest && (
                 <div className="mono absolute inset-0 grid place-items-center text-[11px] uppercase tracking-[0.16em] text-foreground/40">
-                  Loading the lesson&hellip;
+                  Loading the 3D Guru demonstration&hellip;
                 </div>
               )}
             </div>
 
             {/* Mobile Header: below 3D studio on phone devices */}
-            <div className="sm:hidden mt-4 min-w-0">
+            <div className="sm:hidden mt-2 min-w-0">
               <Eyebrow tone="primary">
-                {dance && part ? `${dance.name} · Part ${part}` : "lesson"}
+                {dance && part ? `${dance.name} · Part ${part}` : "3D Guru Demonstration"}
               </Eyebrow>
               <h1 className="serif mt-1 text-[1.85rem] leading-[1.1] break-words">
                 {manifest?.title ?? " "}
@@ -563,16 +730,23 @@ export default function LessonPlayer({
               </p>
             </div>
 
-            {/* Her words narration */}
-            <p className="serif mt-3 sm:mt-4 min-h-[3rem] text-[0.95rem] sm:text-[1.05rem] leading-[1.55] text-foreground/80 break-words">
-              {line ? lineText(line, lang) : ""}
-            </p>
+            {/* Subtitles & Spoken Narration Banner */}
+            {showSubtitles && (
+              <div className="rounded-xl border border-card-border bg-card/60 p-3 flex items-start gap-2.5 min-h-[3.2rem]">
+                <Volume2 className="h-4 w-4 text-primary shrink-0 mt-0.5 opacity-80" />
+                <p className="serif text-[0.98rem] leading-[1.55] text-foreground/90 break-words">
+                  {line ? lineText(line, lang) : (
+                    <span className="italic text-foreground/40">Guru demonstration in progress…</span>
+                  )}
+                </p>
+              </div>
+            )}
 
-            {/* Player controls */}
-            <div className="mt-2 w-full min-w-0 rounded-2xl border border-card-border bg-card p-3 sm:p-4 shadow-sm">
+            {/* Player Controls Bar */}
+            <div className="w-full min-w-0 rounded-2xl border border-card-border bg-card p-3 sm:p-4 shadow-sm space-y-3">
+              {/* Row 1: Primary Play / Navigation & Timeline Scrubber */}
               <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
-                {/* Row 1 on mobile: Play Button + mobile quick chips */}
-                <div className="flex items-center justify-between sm:justify-start gap-3">
+                <div className="flex items-center justify-between sm:justify-start gap-2.5">
                   <button
                     type="button"
                     onClick={() => (playing ? pause() : play())}
@@ -587,30 +761,52 @@ export default function LessonPlayer({
                     )}
                   </button>
 
-                  <div className="flex sm:hidden items-center gap-1.5">
+                  {/* Step Jump Chips */}
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => seek(current?.start ?? 0)}
-                      className={`${chip} ${chipOff}`}
-                      title="Restart current step"
+                      onClick={prevStep}
+                      disabled={!manifest || step === 0}
+                      className={`${chip} ${chipOff} disabled:opacity-30`}
+                      title="Previous step (or '[' key)"
                     >
-                      <RotateCcw className="mr-1 inline h-3 w-3" />
-                      Restart
+                      <SkipBack className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        seek(current?.start ?? 0);
+                        play();
+                      }}
+                      className={`${chip} ${chipOff}`}
+                      title="Replay current step"
+                    >
+                      <RotateCcw className="h-3 w-3 mr-1 inline" />
+                      Replay
+                    </button>
+                    <button
+                      type="button"
+                      onClick={nextStep}
+                      disabled={!manifest || (manifest && step >= manifest.steps.length - 1)}
+                      className={`${chip} ${chipOff} disabled:opacity-30`}
+                      title="Next step (or ']' key)"
+                    >
+                      <SkipForward className="h-3 w-3" />
                     </button>
                     <button
                       type="button"
                       onClick={() => setLoop((v) => !v)}
                       aria-pressed={loop}
                       className={`${chip} ${loop ? chipOn : chipOff}`}
-                      title="Loop step"
+                      title="Loop current step continuously"
                     >
-                      <Repeat className="mr-1 inline h-3 w-3" />
+                      <Repeat className="h-3 w-3 mr-1 inline" />
                       Loop
                     </button>
                   </div>
                 </div>
 
-                {/* Scrubber slider: ON ITS OWN NEXT LINE on mobile for full width! */}
+                {/* Scrubber slider */}
                 <div className="flex flex-1 items-center gap-2 w-full min-w-0">
                   <span
                     ref={clockRef}
@@ -632,7 +828,6 @@ export default function LessonPlayer({
                       onChange={(e) => seek(Number(e.target.value))}
                       className="w-full h-2 accent-primary cursor-pointer"
                     />
-                    {/* Where one step becomes the next. */}
                     {manifest?.steps.slice(1).map((s) => (
                       <span
                         key={s.start}
@@ -649,11 +844,49 @@ export default function LessonPlayer({
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-1.5 sm:gap-2">
-                {/* 1. Camera View Framing Controls (repositioned cleanly outside 3D learning canvas) */}
-                <div className="flex items-center gap-1 rounded-full border border-foreground/15 bg-background/50 p-0.5">
-                  <span className="mono text-[9px] uppercase tracking-[0.14em] text-foreground/50 px-2 select-none">
-                    View:
+              {/* Row 2: Multiple Viewpoints Toolbar (Step 4) */}
+              <div className="pt-2 border-t border-foreground/8 flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1 rounded-full border border-foreground/15 bg-background/50 p-1">
+                  <span className="mono text-[9px] uppercase tracking-[0.14em] text-foreground/50 px-2 select-none flex items-center gap-1">
+                    <Compass className="h-3 w-3 text-primary" /> Viewpoint:
+                  </span>
+                  {(["front", "side", "threeQuarter", "reset"] as const).map((vp) => (
+                    <button
+                      key={vp}
+                      type="button"
+                      onClick={() => {
+                        setActiveViewpoint(vp);
+                        apiRef.current?.setViewpoint(vp);
+                      }}
+                      className={`rounded-full px-2.5 py-1 text-[10px] uppercase font-mono tracking-wider transition-colors ${
+                        activeViewpoint === vp
+                          ? "bg-primary text-black font-semibold shadow-sm"
+                          : "text-foreground/70 hover:bg-white/10 hover:text-foreground"
+                      }`}
+                      title={
+                        vp === "front"
+                          ? "Front View (0°)"
+                          : vp === "side"
+                          ? "Side Profile View (90°) - Inspect knee bend and vertical posture"
+                          : vp === "threeQuarter"
+                          ? "3/4 Perspective View (45°) - Isometric stance geometry"
+                          : "Reset View to standard framing"
+                      }
+                    >
+                      {vp === "front" && "Front"}
+                      {vp === "side" && "Side Profile"}
+                      {vp === "threeQuarter" && "3/4 View"}
+                      {vp === "reset" && "Reset"}
+                    </button>
+                  ))}
+                </div>
+
+                <span aria-hidden className="mx-1 hidden sm:inline h-4 w-px bg-foreground/15" />
+
+                {/* Anatomical Zoom Presets */}
+                <div className="flex items-center gap-1 rounded-full border border-foreground/12 bg-background/40 p-0.5">
+                  <span className="mono text-[8.5px] uppercase tracking-[0.14em] text-foreground/45 px-2 select-none">
+                    Zoom:
                   </span>
                   {(["full", "face", "mudras", "feet"] as const).map((preset) => (
                     <button
@@ -663,76 +896,56 @@ export default function LessonPlayer({
                         setActivePreset(preset);
                         apiRef.current?.focusPreset(preset);
                       }}
-                      className={`rounded-full px-2.5 py-1 text-[10px] uppercase font-mono tracking-wider transition-colors ${
+                      className={`rounded-full px-2 py-0.5 text-[9px] uppercase font-mono tracking-wider transition-colors ${
                         activePreset === preset
-                          ? "bg-primary text-black font-semibold shadow-sm"
-                          : "text-foreground/70 hover:bg-white/10 hover:text-foreground"
+                          ? "bg-foreground/20 text-foreground font-semibold"
+                          : "text-foreground/60 hover:text-foreground"
                       }`}
-                      title={
-                        preset === "full"
-                          ? "Full body framing"
-                          : preset === "face"
-                          ? "Zoom to face & abhinaya"
-                          : preset === "mudras"
-                          ? "Zoom to hands & mudras"
-                          : "Zoom to feet & footwork"
-                      }
                     >
-                      {preset === "full" && "Full"}
-                      {preset === "face" && "Face"}
-                      {preset === "mudras" && "Mudras"}
-                      {preset === "feet" && "Feet"}
+                      {preset}
                     </button>
                   ))}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActivePreset("full");
-                      apiRef.current?.fitToScreen();
-                    }}
-                    className="rounded-full px-2 py-1 text-[10px] uppercase font-mono tracking-wider text-amber-400 hover:bg-amber-400/10 hover:text-amber-300 transition-colors inline-flex items-center gap-1"
-                    title="Reset 3D camera to front view (Fit to screen)"
-                  >
-                    <RotateCcw className="h-2.5 w-2.5" />
-                    <span>Fit</span>
-                  </button>
                 </div>
 
-                <span aria-hidden className="mx-1 h-4 w-px bg-foreground/15" />
+                <span aria-hidden className="mx-1 hidden sm:inline h-4 w-px bg-foreground/15" />
 
-                {/* 2. Playback & Speeds */}
+                {/* Playback Speeds: 0.5x, 0.75x, 1x (Step 3) */}
+                <div className="flex items-center gap-1">
+                  <span className="mono text-[9px] uppercase tracking-wider text-foreground/45 ml-1">Speed:</span>
+                  {SPEEDS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setSpeed(s)}
+                      aria-pressed={speed === s}
+                      className={`${chip} ${speed === s ? chipOn : chipOff} px-2.5 py-1 text-[9px]`}
+                      title={`Playback speed ${s}x`}
+                    >
+                      {s}&times;
+                    </button>
+                  ))}
+                </div>
+
+                <span aria-hidden className="mx-1 hidden sm:inline h-4 w-px bg-foreground/15" />
+
+                {/* Full Sequence Play button */}
                 <button
                   type="button"
-                  onClick={() => seek(current?.start ?? 0)}
-                  className={`${chip} ${chipOff}`}
+                  onClick={() => {
+                    setLoop(false);
+                    seek(0);
+                    play();
+                  }}
+                  className={`${chip} ${chipOff} text-[9px]`}
+                  title="Play complete continuous choreography from the beginning"
                 >
-                  <RotateCcw className="mr-1.5 inline h-3 w-3" />
-                  Restart step
+                  Full Sequence
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setLoop((v) => !v)}
-                  aria-pressed={loop}
-                  className={`${chip} ${loop ? chipOn : chipOff}`}
-                >
-                  <Repeat className="mr-1.5 inline h-3 w-3" />
-                  Loop step
-                </button>
-                {SPEEDS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setSpeed(s)}
-                    aria-pressed={speed === s}
-                    className={`${chip} ${speed === s ? chipOn : chipOff}`}
-                  >
-                    {s}&times;
-                  </button>
-                ))}
+              </div>
 
-                <span aria-hidden className="mx-1 h-4 w-px bg-foreground/15" />
-
-                {/* 3. Multi-Language Dropdown Selector */}
+              {/* Row 3: Language, Voice Persona, Model & Audio Controls */}
+              <div className="pt-2 border-t border-foreground/8 flex flex-wrap items-center gap-2">
+                {/* Multi-Language Dropdown */}
                 <div className="relative inline-block">
                   <button
                     type="button"
@@ -775,7 +988,7 @@ export default function LessonPlayer({
                   )}
                 </div>
 
-                {/* 4. Guru Voice Model Dropdown Selector (with specific strengths and best-for guidance) */}
+                {/* Guru Voice Persona Dropdown */}
                 <div className="relative inline-block">
                   <button
                     type="button"
@@ -845,9 +1058,7 @@ export default function LessonPlayer({
                   )}
                 </div>
 
-                <span aria-hidden className="mx-1 h-4 w-px bg-foreground/15" />
-
-                {/* 5. Figure Sex & Display toggles */}
+                {/* Figure Sex Toggles */}
                 {(["female", "male"] as const).map((s) => (
                   <button
                     key={s}
@@ -872,18 +1083,19 @@ export default function LessonPlayer({
                     {s === "female" ? "Woman" : "Man"}
                   </button>
                 ))}
+
+                {/* Skeleton Bones Overlay Toggle */}
                 <button
                   type="button"
                   onClick={() => setSkeleton((v) => !v)}
                   aria-pressed={skeleton}
                   className={`${chip} ${skeleton ? chipOn : chipOff}`}
+                  title="Toggle anatomical skeleton lines"
                 >
                   Bones
                 </button>
 
-                <span aria-hidden className="mx-1 h-4 w-px bg-foreground/15" />
-
-                {/* 6. Voice Narration Mute & Volume */}
+                {/* Audio Volume & Mute */}
                 <button
                   type="button"
                   onClick={() => setMuted((v) => !v)}
@@ -909,86 +1121,295 @@ export default function LessonPlayer({
                   disabled={!manifest?.voice}
                   aria-label="Narration volume"
                   title="Narration volume"
-                  className="h-1 w-24 cursor-pointer accent-primary disabled:opacity-40"
+                  className="h-1 w-20 cursor-pointer accent-primary disabled:opacity-40"
                 />
               </div>
             </div>
-          </div>
 
-          <aside>
-            <Eyebrow>the steps</Eyebrow>
-            <ol className="mt-4 space-y-1">
-              {manifest?.steps.map((s, i) => (
-                <li key={s.start}>
-                  <button
-                    type="button"
-                    onClick={() => seek(s.start)}
-                    aria-current={i === step ? "step" : undefined}
-                    className={`w-full rounded-lg px-3 py-2 text-left transition-colors ${
-                      i === step ? "bg-primary/10" : "hover:bg-foreground/5"
-                    }`}
-                  >
-                    <span className="flex items-baseline gap-2">
-                      <span
-                        className={`mono text-[10px] tabular-nums ${
-                          i === step ? "text-primary" : "text-foreground/35"
-                        }`}
-                      >
-                        {clock(s.start)}
-                      </span>
-                      <span
-                        className={`serif text-[0.98rem] leading-tight ${
-                          i === step ? "text-foreground" : "text-foreground/65"
-                        }`}
-                      >
-                        {s.name}
-                      </span>
+            {/* Active Step Explanation Panel (Step 5 & 7) */}
+            {current && showExplanation && (
+              <div className="rounded-2xl border border-card-border bg-card p-4 sm:p-5 shadow-sm space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-foreground/10">
+                  <div className="flex items-center gap-2">
+                    <span className="mono text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/30">
+                      Step {step + 1} of {manifest?.steps.length}
                     </span>
-                  </button>
-                </li>
-              ))}
-            </ol>
+                    <h3 className="serif text-[1.2rem] font-semibold text-foreground/95">
+                      {current.name}
+                    </h3>
+                  </div>
 
-            {current && (
-              <div className="mt-6 rounded-2xl border border-card-border bg-card p-4">
-                <Eyebrow tone="primary">{current.name}</Eyebrow>
-                <p className="serif mt-2 text-[0.98rem] leading-[1.55] text-foreground/70">
+                  <div className="flex items-center gap-2">
+                    {/* Listen on demand button */}
+                    <button
+                      type="button"
+                      onClick={handleToggleSpeakExplanation}
+                      className={`mono inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] uppercase tracking-wider transition-colors ${
+                        isSpeakingExplanation
+                          ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse"
+                          : "bg-primary/10 text-primary border border-primary/25 hover:bg-primary/20"
+                      }`}
+                      title="Listen to this step's explanation without video"
+                    >
+                      {isSpeakingExplanation ? (
+                        <>
+                          <VolumeX className="h-3 w-3" />
+                          <span>Stop Voice</span>
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 className="h-3 w-3" />
+                          <span>Listen Explanation</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <p className="serif text-[1rem] leading-[1.65] text-foreground/85">
                   {current.gloss}
                 </p>
-                <Rule className="my-3" />
-                <ul className="space-y-2">
-                  {current.cues.map((cue) => (
-                    <li
-                      key={cue}
-                      className="serif flex gap-2 text-[0.95rem] leading-[1.5] text-foreground/75"
-                    >
-                      <span
-                        aria-hidden
-                        className="mt-[0.45rem] h-1 w-1 shrink-0 rounded-full bg-primary"
-                      />
-                      {cue}
+
+                {/* Technique Cues list */}
+                <div>
+                  <p className="mono text-[9px] uppercase tracking-[0.16em] text-foreground/50 mb-2">
+                    Alignment & Technique Cues:
+                  </p>
+                  <ul className="space-y-1.5">
+                    {current.cues.map((cue) => (
+                      <li key={cue} className="serif flex gap-2 text-[0.95rem] leading-[1.5] text-foreground/80">
+                        <span aria-hidden className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                        {cue}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Related Mudra Links */}
+                {relatedMudras.length > 0 && (
+                  <div className="pt-3 border-t border-foreground/10">
+                    <p className="mono text-[9px] uppercase tracking-[0.16em] text-foreground/50 mb-2">
+                      Related Mudras (3D Library):
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {relatedMudras.map((m) => (
+                        <Link
+                          key={m.slug}
+                          href={`/library/${m.slug}`}
+                          className="mono inline-flex items-center gap-1 text-[9.5px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-foreground/5 hover:bg-primary/15 hover:text-primary transition-colors text-foreground/75 border border-foreground/12"
+                        >
+                          <BookOpen className="h-2.5 w-2.5 text-primary" />
+                          <span>{m.name}</span>
+                          <ArrowRight className="h-2.5 w-2.5 ml-0.5 opacity-60" />
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Right Column: Sidebar (Steps List or Ask the Guru) */}
+          <aside className="space-y-4">
+            {/* Sidebar View Switcher: Steps vs Ask Virtual Guru */}
+            <div className="flex items-center rounded-xl border border-foreground/15 bg-background/50 p-1 mb-2">
+              <button
+                type="button"
+                onClick={() => setSidebarTab("steps")}
+                className={`flex-1 mono text-[10px] uppercase tracking-wider py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
+                  sidebarTab === "steps"
+                    ? "bg-foreground/15 text-foreground font-semibold shadow-xs"
+                    : "text-foreground/50 hover:text-foreground"
+                }`}
+              >
+                <BookOpen className="h-3 w-3" /> Steps & Cues
+              </button>
+              <button
+                type="button"
+                onClick={() => setSidebarTab("guru")}
+                className={`flex-1 mono text-[10px] uppercase tracking-wider py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
+                  sidebarTab === "guru"
+                    ? "bg-primary text-black font-semibold shadow-xs"
+                    : "text-foreground/50 hover:text-foreground"
+                }`}
+              >
+                <MessageSquare className="h-3 w-3" /> Ask the Guru
+              </button>
+            </div>
+
+            {sidebarTab === "guru" ? (
+              <div className="h-[740px] flex flex-col">
+                <GuruChatPanel
+                  currentLessonSlug={slug}
+                  currentLessonTitle={manifest?.title}
+                  currentStepIndex={step}
+                  currentStepName={current?.name}
+                  currentStepGloss={current?.gloss}
+                  currentStepCues={current?.cues}
+                  personaId={persona.id}
+                  lang={lang}
+                  audioEngine={audioEngineRef.current}
+                  className="h-full"
+                />
+              </div>
+            ) : (
+              <div>
+                {/* Lesson Objectives */}
+                <div className="rounded-2xl border border-card-border bg-card p-4 shadow-sm mb-4">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="h-4 w-4 text-primary" />
+                    <Eyebrow tone="primary">Lesson Objectives</Eyebrow>
+                  </div>
+                  <p className="serif mt-2 text-[0.96rem] leading-[1.55] text-foreground/80">
+                    {slug === "namaskaram"
+                      ? "Master the sacred 11-step salutation, grounded Aramandi stability, and Anjali mudra alignment with precise Adi Tala rhythm."
+                      : slug === "thattadavu"
+                      ? "Build foundational footwork rhythm: flat-foot striking (tattu) in Aramandi posture across three tempos (Kalam)."
+                      : manifest?.subtitle ?? "Learn foundational movement sequence."}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    <span className="mono text-[9px] px-2 py-0.5 rounded-full bg-foreground/5 text-foreground/60 border border-foreground/10">
+                      {manifest?.steps.length ?? 0} Steps
+                    </span>
+                    <span className="mono text-[9px] px-2 py-0.5 rounded-full bg-foreground/5 text-foreground/60 border border-foreground/10">
+                      {clock(manifest?.duration ?? 0)} Duration
+                    </span>
+                    <span className="mono text-[9px] px-2 py-0.5 rounded-full bg-foreground/5 text-foreground/60 border border-foreground/10">
+                      3D Guru Demonstrated
+                    </span>
+                  </div>
+                </div>
+
+                {/* Lesson Completion Card when on last step */}
+                {manifest && step === manifest.steps.length - 1 && (
+                  <div className="rounded-2xl border border-primary/40 bg-primary/[0.06] p-4 shadow-md mb-4">
+                    <div className="flex items-center gap-2">
+                      <Award className="h-4 w-4 text-primary" />
+                      <Eyebrow tone="primary">Lesson Completed</Eyebrow>
+                    </div>
+                    <h4 className="serif text-[1.15rem] leading-tight text-foreground/95 mt-1.5">
+                      Well Danced!
+                    </h4>
+                    <p className="serif text-[0.92rem] leading-snug text-foreground/70 mt-1">
+                      You have danced through all {manifest.steps.length} steps of {manifest.title}. Replay to solidify your posture or proceed to the next lesson.
+                    </p>
+                    <div className="mt-4 flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isCompleted) {
+                            CurriculumProgressService.unmarkCompleted(slug);
+                            setIsCompleted(false);
+                          } else {
+                            CurriculumProgressService.markCompleted(slug);
+                            setIsCompleted(true);
+                          }
+                        }}
+                        className={`mono inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-[10px] uppercase tracking-[0.16em] font-semibold transition-colors shadow-sm ${
+                          isCompleted
+                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30"
+                            : "bg-primary text-black hover:bg-primary/85"
+                        }`}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {isCompleted ? "Marked Complete (Click to Reset)" : "Mark Lesson Complete"}
+                      </button>
+                      {part === 1 ? (
+                        <Link
+                          href={`/learn/${dance?.slug ?? "bharatanatyam"}/thattadavu`}
+                          className="mono inline-flex items-center justify-center gap-2 rounded-full bg-primary px-4 py-2 text-[10px] uppercase tracking-[0.16em] text-black font-semibold hover:bg-primary/85 transition-colors shadow-sm"
+                        >
+                          Next: Part 2 (Thattadavu)
+                        </Link>
+                      ) : part === 2 ? (
+                        <Link
+                          href={`/learn/${dance?.slug ?? "bharatanatyam"}/adi-tala-and-rhythm`}
+                          className="mono inline-flex items-center justify-center gap-2 rounded-full bg-primary px-4 py-2 text-[10px] uppercase tracking-[0.16em] text-black font-semibold hover:bg-primary/85 transition-colors shadow-sm"
+                        >
+                          Next: Level 4 (Adi Tala & Rhythm)
+                        </Link>
+                      ) : (
+                        <Link
+                          href={`/learn/${dance?.slug ?? "bharatanatyam"}`}
+                          className="mono inline-flex items-center justify-center gap-2 rounded-full bg-primary px-4 py-2 text-[10px] uppercase tracking-[0.16em] text-black font-semibold hover:bg-primary/85 transition-colors shadow-sm"
+                        >
+                          View All Curriculum Levels
+                        </Link>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          seek(0);
+                          play();
+                        }}
+                        className="mono inline-flex items-center justify-center gap-2 rounded-full border border-foreground/20 px-4 py-2 text-[10px] uppercase tracking-[0.16em] text-foreground/80 hover:border-primary/50 hover:text-primary transition-colors"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Replay From Start
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step List navigation */}
+                <Eyebrow>the steps</Eyebrow>
+                <ol className="mt-3 space-y-1">
+                  {manifest?.steps.map((s, i) => (
+                    <li key={s.start}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          seek(s.start);
+                        }}
+                        aria-current={i === step ? "step" : undefined}
+                        className={`w-full rounded-lg px-3 py-2 text-left transition-colors flex items-center justify-between ${
+                          i === step
+                            ? "bg-primary/15 border-l-2 border-primary text-foreground font-medium"
+                            : "hover:bg-foreground/5 text-foreground/75"
+                        }`}
+                      >
+                        <span className="flex items-baseline gap-2">
+                          <span
+                            className={`mono text-[10px] tabular-nums ${
+                              i === step ? "text-primary font-bold" : "text-foreground/35"
+                            }`}
+                          >
+                            {clock(s.start)}
+                          </span>
+                          <span
+                            className={`serif text-[0.98rem] leading-tight ${
+                              i === step ? "text-foreground font-semibold" : "text-foreground/70"
+                            }`}
+                          >
+                            {s.name}
+                          </span>
+                        </span>
+
+                        {i === step && (
+                          <span className="mono text-[8px] uppercase tracking-wider text-primary px-1.5 py-0.5 rounded bg-primary/10">
+                            Current
+                          </span>
+                        )}
+                      </button>
                     </li>
                   ))}
-                </ul>
+                </ol>
 
-                {/* Everything she says during this step, readable while the
-                    clip is stopped. The caption under the figure only shows
-                    the line for the instant you are on, which is no use when
-                    you want to know what a step is about before playing it. */}
-                {manifest && (
-                  <>
-                    <Rule className="my-3" />
-                    <Eyebrow>in her words</Eyebrow>
-                    <ul className="mt-2 space-y-1">
+                {/* Everything she says during this step */}
+                {manifest && current && (
+                  <div className="mt-6 rounded-2xl border border-card-border bg-card p-4">
+                    <Eyebrow>in her words (audio lines)</Eyebrow>
+                    <ul className="mt-3 space-y-1.5">
                       {linesIn(manifest.lines, current).map((l) => (
                         <li key={l.start}>
                           <button
                             type="button"
                             onClick={() => seek(l.start)}
-                            className={`serif w-full rounded-md px-2 py-1 text-left text-[0.92rem] leading-[1.45] transition-colors ${
+                            className={`serif w-full rounded-md px-2.5 py-1.5 text-left text-[0.92rem] leading-[1.45] transition-colors ${
                               l.start === line?.start
-                                ? "bg-primary/10 text-foreground"
-                                : "text-foreground/55 hover:bg-foreground/5 hover:text-foreground/80"
+                                ? "bg-primary/10 text-primary font-medium border-l-2 border-primary"
+                                : "text-foreground/60 hover:bg-foreground/5 hover:text-foreground/80"
                             }`}
                           >
                             {lineText(l, lang)}
@@ -996,7 +1417,7 @@ export default function LessonPlayer({
                         </li>
                       ))}
                     </ul>
-                  </>
+                  </div>
                 )}
               </div>
             )}

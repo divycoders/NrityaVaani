@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import DanceParts from "@/components/learn/DanceParts";
 import DancePhoto from "@/components/learn/DancePhoto";
 import IdentifyMudra from "@/components/learn/IdentifyMudra";
+import CurriculumView from "@/components/learn/CurriculumView";
 import { Eyebrow, Headline, Prose } from "@/components/ui/editorial";
 import { DANCES } from "@/lib/constants/dances";
 import { danceOf } from "@/lib/lesson/manifest";
@@ -20,13 +21,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 /**
- * One dance: what it is, and its lessons in order as "Part 1", "Part 2"…
+ * One classical dance: what it is, and its curriculum in order.
  *
- * Also where the addresses lessons had before they were filed under a dance —
- * `/learn/<lesson>` — land, and are sent on to the lesson's place in its dance.
+ * For Bharatanatyam, presents the full 6-level teaching-first curriculum with
+ * 3D Guru instruction, progress tracking, and level filtering.
  */
 export default async function DancePage({ params }: Props) {
-  // Parts are uploaded while the site is running; read them on each request.
   await connection();
   const { dance: slug } = await params;
 
@@ -64,14 +64,21 @@ export default async function DancePage({ params }: Props) {
               </Prose>
             </header>
 
-            {/* Live detection reads Bharatanatyam's hastas, so only its page offers it. */}
+            {/* Optional diagnostic tool on Bharatanatyam page */}
             {dance.slug === "bharatanatyam" && <IdentifyMudra className="mt-8" />}
 
-            <DanceParts
-              dance={{ slug: dance.slug, name: dance.name }}
-              lessons={lessons}
-              className="mt-14"
-            />
+            {/* Teaching-first Progressive Curriculum for Bharatanatyam */}
+            {dance.slug === "bharatanatyam" ? (
+              <div className="mt-14">
+                <CurriculumView />
+              </div>
+            ) : (
+              <DanceParts
+                dance={{ slug: dance.slug, name: dance.name }}
+                lessons={lessons}
+                className="mt-14"
+              />
+            )}
           </div>
 
           <aside>

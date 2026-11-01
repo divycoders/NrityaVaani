@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint src",
+    "test": "node --experimental-strip-types --test tests/**/*.test.ts",
     "build:poses": "node scripts/build-mudra-poses.mjs"
   },
   "dependencies": {

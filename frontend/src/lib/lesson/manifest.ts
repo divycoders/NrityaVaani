@@ -30,7 +30,7 @@ export interface LessonStep {
 }
 
 /** The classical and regional languages a lesson can be read and spoken in. */
-export type Language = "en" | "hi" | "hing" | "ta" | "te" | "ml" | "sa" | "kn" | "bn";
+export type Language = "en" | "hi" | "hing" | "ta" | "te" | "ml" | "sa" | "kn" | "bn" | "mr" | "gu" | "pa" | "or" | "as" | "ur";
 
 export interface LanguageOption {
   code: Language;
@@ -45,10 +45,16 @@ export const SUPPORTED_LANGUAGES: LanguageOption[] = [
   { code: "hing", label: "Hinglish", native: "Hinglish", region: "Urban Classical" },
   { code: "ta", label: "Tamil", native: "தமிழ்", region: "Tamil Nadu / Bharatanatyam" },
   { code: "te", label: "Telugu", native: "తెలుగు", region: "Andhra / Kuchipudi" },
-  { code: "ml", label: "Malayalam", native: "മലയാളം", region: "Kerala / Kathakali & Mohiniyattam" },
-  { code: "sa", label: "Sanskrit", native: "संस्कृतम्", region: "Natyashastra / Shlokas" },
   { code: "kn", label: "Kannada", native: "ಕನ್ನಡ", region: "Karnataka / Classical" },
+  { code: "ml", label: "Malayalam", native: "മലയാളം", region: "Kerala / Kathakali & Mohiniyattam" },
   { code: "bn", label: "Bengali", native: "বাংলা", region: "Bengal / Classical" },
+  { code: "mr", label: "Marathi", native: "मराठी", region: "Maharashtra / Classical" },
+  { code: "gu", label: "Gujarati", native: "ગુજરાતી", region: "Gujarat / Folk & Classical" },
+  { code: "pa", label: "Punjabi", native: "ਪੰਜਾਬੀ", region: "Punjab" },
+  { code: "or", label: "Odia", native: "ଓଡ଼ିଆ", region: "Odisha / Odissi" },
+  { code: "as", label: "Assamese", native: "অসমীয়া", region: "Assam / Sattriya" },
+  { code: "sa", label: "Sanskrit", native: "संस्कृतम्", region: "Natyashastra / Shlokas" },
+  { code: "ur", label: "Urdu", native: "اردو", region: "Pan-India / Kathak" },
 ];
 
 /** One thing she says, on the clip's clock. */

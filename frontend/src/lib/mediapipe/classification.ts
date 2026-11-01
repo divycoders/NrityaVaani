@@ -37,6 +37,7 @@ export function getFingerExtensionScore(landmarks: Point[], fingerIndices: numbe
     calculateDistance(pip, dip) + 
     calculateDistance(dip, tip);
 
+  if (distSegments <= 0) return 0;
   return Math.min(1.0, distMcpTip / distSegments);
 }
 
@@ -44,6 +45,13 @@ export function getFingerExtensionScore(landmarks: Point[], fingerIndices: numbe
 // them, but the rules are all relative to the hand's own geometry and so
 // read the same on either hand.
 export function classifyMudra(landmarks: Point[], handedness?: string) {
+  if (!landmarks || landmarks.length < 21) {
+    return { name: "No Mudra Detected", confidence: 0, feedback: "Adjust your hand position or check the lighting." };
+  }
+  const handSpan = calculateDistance(landmarks[0], landmarks[9]);
+  if (handSpan < 0.01) {
+    return { name: "No Mudra Detected", confidence: 0, feedback: "Adjust your hand position or check the lighting." };
+  }
   const thumbIdx = [1, 2, 3, 4];
   const indexIdx = [5, 6, 7, 8];
   const middleIdx = [9, 10, 11, 12];
@@ -98,8 +106,8 @@ export function classifyMudra(landmarks: Point[], handedness?: string) {
     }
   }
 
-  // 3. Ardhapataka: Index, Middle straight, others bent
-  if (isExt(sIdx) && isExt(sMid) && isBent(sRng) && isBent(sPky)) {
+  // 3. Ardhapataka: Index, Middle straight and held together, others bent
+  if (isExt(sIdx) && isExt(sMid) && isBent(sRng) && isBent(sPky) && distIdxMid <= 0.08) {
     const confidence = (sIdx + sMid + (1 - sRng) + (1 - sPky)) / 4;
     if (confidence > maxConfidence) {
       maxConfidence = confidence;
@@ -276,8 +284,12 @@ export function classifyMudra(landmarks: Point[], handedness?: string) {
  */
 export function getSpecificMudraScore(landmarks: Point[], targetMudra: string, handedness: string): MudraScore {
   const result = _getSpecificMudraScoreRaw(landmarks, targetMudra, handedness);
-  if (result && result.confidence) {
-    result.confidence = Math.min(1.0, Math.round(result.confidence * 100) / 100);
+  if (result) {
+    if (!Number.isFinite(result.confidence) || Number.isNaN(result.confidence)) {
+      result.confidence = 0;
+    } else {
+      result.confidence = Math.min(1.0, Math.max(0, Math.round(result.confidence * 100) / 100));
+    }
   }
   return result;
 }

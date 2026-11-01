@@ -128,9 +128,14 @@ export default function MudraDetailPage() {
 
             <div className="mt-11 flex flex-wrap gap-3">
               <Pill href={`/practice/${mudra.slug}`} variant="solid">
-                Practise this mudra
+                Optional: Self-practice
               </Pill>
-              <Pill href="/live">Open live detection</Pill>
+              <Pill href="/learn/bharatanatyam/asamyukta-hastas">
+                Level 5 Curriculum
+              </Pill>
+              <Pill href="/library">
+                All Mudras
+              </Pill>
             </div>
           </div>
         </div>

@@ -5,11 +5,7 @@ import type { LessonSummary } from "@/lib/lesson/manifest";
 /**
  * A dance's lessons in order, as its parts.
  *
- * This site delivers lessons; it does not make them, and learners use it, so
- * the list only opens parts — it neither uploads nor deletes them. A lesson is
- * authored in the separate studio app and published into `public/lessons`,
- * where the list finds it (`/api/lessons/import` still accepts a studio ZIP,
- * but nothing here links to it).
+ * Taught sequentially with the interactive 3D Virtual Guru.
  */
 export default function DanceParts({
   dance,
@@ -23,7 +19,12 @@ export default function DanceParts({
 }) {
   return (
     <section className={className}>
-      <h2 className="serif text-[1.8rem] leading-tight">Parts</h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-foreground/12 pb-3">
+        <h2 className="serif text-[1.8rem] leading-tight">Parts</h2>
+        <span className="mono text-[10px] uppercase tracking-[0.16em] text-foreground/45">
+          Step-by-step 3D lessons · Camera optional
+        </span>
+      </div>
 
       {lessons.length === 0 ? (
         <div className="mt-5 rounded-sm border border-dashed border-foreground/20 px-6 py-14 text-center">
@@ -33,7 +34,7 @@ export default function DanceParts({
           <p className="serif mt-2 text-foreground/45">New parts appear here as they are published.</p>
         </div>
       ) : (
-        <ol className="mt-5 border-t border-foreground/12">
+        <ol className="mt-1">
           {lessons.map((lesson, i) => (
             <li key={lesson.slug}>
               <PartRow lesson={lesson} part={i + 1} />
